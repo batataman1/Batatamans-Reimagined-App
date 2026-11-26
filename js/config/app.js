@@ -1,7 +1,7 @@
 // App-wide settings. Nothing secret belongs here: this file is public on GitHub Pages.
 
 export const APP_NAME = "Batataman's Reimagined";
-export const APP_VERSION = '0.1.2 (part 2a, update 2)';
+export const APP_VERSION = '0.2.0 (part 2b, step 1: reading the wiki)';
 
 // Pre-filled in the Connect to GitHub form. The token is never stored in code.
 export const DEFAULT_OWNER = 'batataman1';

@@ -1,0 +1,1034 @@
+{
+  "format": "batataman-import",
+  "version": 1,
+  "summary": "Starter wiki pages from the mod (24 pages, part 2b)",
+  "changes": [
+    {
+      "action": "upsert",
+      "collection": "wiki",
+      "id": "ostrich",
+      "data": {
+        "name": "Ostrich",
+        "category": null,
+        "group": "mobs",
+        "subgroup": "neutral",
+        "overview": "A big, fast bird you can tame and ride. It dashes when you jump, dances to music, hides its head in the ground when monsters crowd it, and lays eggs that hatch into chicks.",
+        "fields": {
+          "health": "18 (9 hearts)",
+          "attackDamage": "3 (1.5 hearts)",
+          "behavior": "Neutral. Never starts a fight, but adults fight back when hurt and nearby ostriches join in. Untamed adults also go after anyone who breaks or cracks an [[ostrich-egg]] within 16 blocks. Chicks run away instead.",
+          "spawnBiomes": "Doesn't spawn naturally yet (spawn egg only).",
+          "drops": "Nothing yet (no loot table).",
+          "breedingFood": "[[baobab-fruit]]. Tame it like a horse: ride it until it stops throwing you off."
+        },
+        "body": [
+          {
+            "type": "h2",
+            "text": "Taming and riding"
+          },
+          {
+            "type": "bullet",
+            "text": "Ride it until it accepts you, then put a saddle on it."
+          },
+          {
+            "type": "bullet",
+            "text": "Riding speed: about 10 blocks per second walking, about 25 sprinting."
+          },
+          {
+            "type": "bullet",
+            "text": "Press jump to dash forward. Holding jump longer makes a stronger dash. The dash recharges in 2.75 seconds."
+          },
+          {
+            "type": "bullet",
+            "text": "Sneak and use a tamed ostrich to open its inventory."
+          },
+          {
+            "type": "bullet",
+            "text": "It falls slowly and takes half the normal fall damage, and its rider takes the same damage."
+          },
+          {
+            "type": "bullet",
+            "text": "A tamed ostrich never targets players."
+          },
+          {
+            "type": "h2",
+            "text": "Feeding"
+          },
+          {
+            "type": "p",
+            "text": "[[baobab-fruit]] heals 2 hearts, puts adults in love mode, makes chicks grow up faster and makes ostriches follow you."
+          },
+          {
+            "type": "h2",
+            "text": "Eggs"
+          },
+          {
+            "type": "p",
+            "text": "After breeding, the mother looks for a log within 20 blocks (a Baobab Log if there is one), walks next to it and lays an [[ostrich-egg]]. Then she stays within 8 blocks of the egg until it hatches or breaks."
+          },
+          {
+            "type": "h2",
+            "text": "Other behavior"
+          },
+          {
+            "type": "bullet",
+            "text": "Hides its head in the ground when 3 or more hostile mobs are within 5 blocks, and keeps hiding (at least 2 seconds) while 3 or more stay within 8 blocks."
+          },
+          {
+            "type": "bullet",
+            "text": "Dances when a jukebox plays within 3 blocks."
+          }
+        ],
+        "related": [
+          "ostrich-egg",
+          "baobab-fruit",
+          "baobab-tree",
+          "savanna"
+        ],
+        "versionAdded": "1.0.0"
+      }
+    },
+    {
+      "action": "upsert",
+      "collection": "wiki",
+      "id": "termite",
+      "data": {
+        "name": "Termite",
+        "category": null,
+        "group": "mobs",
+        "subgroup": "passive",
+        "overview": "A small insect that lives in termite nests. It wanders around, runs when hurt and crawls into a nearby [[termite-nest]] to lay eggs.",
+        "fields": {
+          "health": "8 (4 hearts)",
+          "attackDamage": "None (never attacks)",
+          "behavior": "Passive. Runs away when hurt.",
+          "spawnBiomes": "Doesn't spawn naturally yet (spawn egg only).",
+          "drops": "Nothing yet (no loot table).",
+          "breedingFood": "Stick (it also makes termites follow you)."
+        },
+        "body": [
+          {
+            "type": "h2",
+            "text": "Nests"
+          },
+          {
+            "type": "p",
+            "text": "Every second, a termite checks the blocks right around it. If one is a [[termite-nest]] with room (3 termites at most), it crawls inside. 30 seconds later it comes back out and the nest gains an egg (up to 2)."
+          }
+        ],
+        "notes": "Planned: more nest mechanics, and termites will create [[hollow-logs]].",
+        "related": [
+          "termite-nest",
+          "termite-mound",
+          "hollow-logs"
+        ],
+        "versionAdded": "1.0.0"
+      }
+    },
+    {
+      "action": "upsert",
+      "collection": "wiki",
+      "id": "monkey",
+      "data": {
+        "name": "Monkey",
+        "category": null,
+        "group": "mobs",
+        "subgroup": "passive",
+        "overview": "A playful monkey that trades. Give it a Gold Ingot and it tosses you something back, unless it decides to steal the gold and run.",
+        "fields": {
+          "health": "12 (6 hearts)",
+          "attackDamage": "None (never attacks)",
+          "behavior": "Passive. Runs from players within 8 blocks unless they hold a Gold Ingot or a [[banana]], and runs when hurt. Walks to Gold Ingots dropped within 8 blocks and picks them up.",
+          "spawnBiomes": "Doesn't spawn naturally yet (spawn egg only).",
+          "drops": "Nothing yet (no loot table).",
+          "breedingFood": "[[banana]]. A Gold Ingot or a Banana makes it follow you."
+        },
+        "body": [
+          {
+            "type": "h2",
+            "text": "Trading"
+          },
+          {
+            "type": "p",
+            "text": "Give an adult monkey a Gold Ingot (use it on the monkey, or drop it nearby). It admires the gold for 6 seconds, then tosses a reward to the nearest player."
+          },
+          {
+            "type": "p",
+            "text": "1 time in 4 it steals the gold instead: it dances for 2 seconds, then runs off, and the gold is gone."
+          },
+          {
+            "type": "h3",
+            "text": "Rewards (when it doesn't steal)"
+          },
+          {
+            "type": "bullet",
+            "text": "[[banana|Bananas]] ×2–4, Vines ×2–5, Cocoa Beans ×3–8, Melon Slices ×4–8, Sticks ×4–12, Bamboo ×3–6: 13% each"
+          },
+          {
+            "type": "bullet",
+            "text": "Jungle Saplings ×1–2, Honeycomb ×1–2, Moss Blocks ×1–3: 6.6% each"
+          },
+          {
+            "type": "bullet",
+            "text": "Turtle Scute ×1–2: 1.05% (stands in for [[lizard-scale]])"
+          },
+          {
+            "type": "bullet",
+            "text": "Enchanted Book with Efficiency, Unbreaking or Feather Falling, level I or II: 1.05%"
+          },
+          {
+            "type": "bullet",
+            "text": "Obsidian ×1: 0.1% (stands in for [[heart-of-the-canopy]])"
+          },
+          {
+            "type": "h2",
+            "text": "Other behavior"
+          },
+          {
+            "type": "bullet",
+            "text": "Dances when a jukebox plays within 3 blocks, using one of 4 dances."
+          },
+          {
+            "type": "bullet",
+            "text": "Babies follow the nearest adult and don't trade."
+          }
+        ],
+        "related": [
+          "banana",
+          "lizard-scale",
+          "heart-of-the-canopy",
+          "jungle"
+        ],
+        "versionAdded": "1.0.0"
+      }
+    },
+    {
+      "action": "upsert",
+      "collection": "wiki",
+      "id": "hippo",
+      "data": {
+        "name": "Hippo",
+        "group": "mobs",
+        "subgroup": "neutral",
+        "status": "planned",
+        "overview": "Planned mob. Not in the mod yet.",
+        "notes": "Put in Neutral for now. Move it if its behavior turns out different."
+      }
+    },
+    {
+      "action": "upsert",
+      "collection": "wiki",
+      "id": "brown-bear",
+      "data": {
+        "name": "Brown Bear",
+        "group": "mobs",
+        "subgroup": "neutral",
+        "status": "planned",
+        "overview": "Planned mob. Not in the mod yet.",
+        "notes": "Two textures planned: a regular one and one with a honey-covered mouth. Put in Neutral for now."
+      }
+    },
+    {
+      "action": "upsert",
+      "collection": "wiki",
+      "id": "banana",
+      "data": {
+        "name": "Banana",
+        "group": "items",
+        "subgroup": "food",
+        "overview": "A tropical fruit. [[monkey|Monkeys]] love it.",
+        "fields": {
+          "hungerRestored": "2 (1 drumstick)",
+          "saturation": "3.2",
+          "effectsWhenEaten": "None",
+          "obtainedFrom": "Rare drop when Jungle Leaves break or decay: 0.5% (about 0.8% with Fortune III).\n[[monkey]] trades: 2–4 bananas (13% of trades)."
+        },
+        "notes": "Breeds monkeys and makes them follow you. Composts with a 50% chance.",
+        "related": [
+          "monkey",
+          "jungle"
+        ],
+        "versionAdded": "1.0.0"
+      }
+    },
+    {
+      "action": "upsert",
+      "collection": "wiki",
+      "id": "baobab-fruit",
+      "data": {
+        "name": "Baobab Fruit",
+        "group": "items",
+        "subgroup": "food",
+        "overview": "The fruit of the [[baobab-tree]]. It hangs under Baobab Leaves and ripens in 3 stages.",
+        "fields": {
+          "hungerRestored": "4 (2 drumsticks)",
+          "saturation": "2.4",
+          "effectsWhenEaten": "None",
+          "obtainedFrom": "Break a ripe fruit hanging under Baobab Leaves: 1 fruit plus 0–3 [[baobab-fruit-seeds]] (Fortune adds more). Baobab trees generate with fruit already on them."
+        },
+        "body": [
+          {
+            "type": "h2",
+            "text": "Growing"
+          },
+          {
+            "type": "bullet",
+            "text": "It can only hang directly under Baobab Leaves. Place a fruit or [[baobab-fruit-seeds]] there to start a new one."
+          },
+          {
+            "type": "bullet",
+            "text": "It ripens through 3 stages, about 6 minutes per step on average (about 11 minutes from new to ripe). Bone Meal speeds it up."
+          },
+          {
+            "type": "bullet",
+            "text": "Breaking an unripe fruit gives 1 Baobab Fruit Seeds."
+          },
+          {
+            "type": "bullet",
+            "text": "Pistons break it."
+          }
+        ],
+        "notes": "Breeds, heals and tempts [[ostrich|ostriches]], and makes chicks grow up faster. Composts with a 50% chance.",
+        "related": [
+          "baobab-tree",
+          "baobab-fruit-seeds",
+          "ostrich",
+          "savanna"
+        ],
+        "versionAdded": "1.0.0"
+      }
+    },
+    {
+      "action": "upsert",
+      "collection": "wiki",
+      "id": "baobab-fruit-seeds",
+      "data": {
+        "name": "Baobab Fruit Seeds",
+        "group": "items",
+        "subgroup": "misc",
+        "overview": "Seeds from [[baobab-fruit]]. Plant them under Baobab Leaves to grow new fruit.",
+        "fields": {
+          "stackSize": "64",
+          "obtainedFrom": "Breaking Baobab Fruit (unripe: 1, ripe: 0–3 extra), or crafting.",
+          "craftingRecipe": "1 [[baobab-fruit]] → 2 Baobab Fruit Seeds (shapeless)",
+          "usedToCraft": "Nothing yet",
+          "craftedAt": "Inventory crafting grid or Crafting Table",
+          "behavior": "Place it directly under Baobab Leaves to start a new Baobab Fruit. Composts with a 25% chance."
+        },
+        "related": [
+          "baobab-fruit",
+          "baobab-tree"
+        ],
+        "versionAdded": "1.0.0"
+      }
+    },
+    {
+      "action": "upsert",
+      "collection": "wiki",
+      "id": "ostrich-egg",
+      "data": {
+        "name": "Ostrich Egg",
+        "group": "items",
+        "subgroup": "misc",
+        "overview": "Laid by [[ostrich|ostriches]] after breeding. Left alone, it hatches into an ostrich chick.",
+        "fields": {
+          "stackSize": "64",
+          "obtainedFrom": "Laid by an ostrich after breeding. Breaking the egg drops nothing yet (no loot table), so the item only comes from the creative menu for now.",
+          "craftingRecipe": "None",
+          "usedToCraft": "Nothing yet",
+          "craftedAt": "—",
+          "behavior": "Place it on top of a full solid block. It cracks over time and hatches into a baby ostrich after its third crack."
+        },
+        "body": [
+          {
+            "type": "h2",
+            "text": "Hatching"
+          },
+          {
+            "type": "bullet",
+            "text": "Each random tick has a 1 in 200 chance to crack it one stage further. At the default random tick speed that is about 3¾ hours per stage, so about 11 hours to hatch."
+          },
+          {
+            "type": "bullet",
+            "text": "Walking on it can crack it (1 in 300 per step), landing on it much more often (1 in 10). A fully cracked egg breaks instead, without a chick. Players can always crack it, other mobs only when mob griefing is on, and ostriches never."
+          },
+          {
+            "type": "bullet",
+            "text": "Breaking or cracking it makes untamed adult ostriches within 16 blocks that can see you attack you (not in Creative or Peaceful)."
+          },
+          {
+            "type": "bullet",
+            "text": "Pistons break it."
+          }
+        ],
+        "related": [
+          "ostrich",
+          "baobab-tree"
+        ],
+        "versionAdded": "1.0.0"
+      }
+    },
+    {
+      "action": "upsert",
+      "collection": "wiki",
+      "id": "lizard-scale",
+      "data": {
+        "name": "Lizard Scale",
+        "group": "items",
+        "subgroup": "misc",
+        "status": "planned",
+        "overview": "Planned item. Not in the mod yet.",
+        "notes": "For now, the [[monkey]] trade gives Turtle Scute in its place (1.05% of trades).",
+        "related": [
+          "monkey"
+        ]
+      }
+    },
+    {
+      "action": "upsert",
+      "collection": "wiki",
+      "id": "heart-of-the-canopy",
+      "data": {
+        "name": "Heart of the Canopy",
+        "group": "items",
+        "subgroup": "misc",
+        "status": "planned",
+        "overview": "Planned item. Not in the mod yet.",
+        "notes": "For now, the [[monkey]] trade gives 1 Obsidian in its place, the monkey's rarest reward (0.1% of trades).",
+        "related": [
+          "monkey"
+        ]
+      }
+    },
+    {
+      "action": "upsert",
+      "collection": "wiki",
+      "id": "rope",
+      "data": {
+        "name": "Rope",
+        "group": "blocks",
+        "subgroup": "functional",
+        "overview": "A climbable rope. Hang it from a ceiling or stand it on the floor, like a ladder that doesn't need a wall.",
+        "fields": {
+          "requiredTool": "None. Shears break it fastest.",
+          "lightLevel": "0",
+          "drops": "Itself",
+          "obtainedFrom": "Crafting",
+          "craftingRecipe": "3 String in a vertical line → 1 Rope",
+          "usedToCraft": "Nothing yet",
+          "craftedAt": "Crafting Table",
+          "behavior": "Climbable. Hangs from the bottom of a solid block or stands on top of one, and ropes join into long lines."
+        },
+        "body": [
+          {
+            "type": "bullet",
+            "text": "Use rope on a rope line to add the new piece at the far end: downwards on a hanging line, upwards on a standing one."
+          },
+          {
+            "type": "bullet",
+            "text": "When nothing holds a piece up anymore, it breaks and drops."
+          },
+          {
+            "type": "bullet",
+            "text": "The top and bottom ends look different from the middle pieces."
+          }
+        ],
+        "notes": "Planned (a TODO in the code): ropes that go sideways.",
+        "versionAdded": "1.0.0"
+      }
+    },
+    {
+      "action": "upsert",
+      "collection": "wiki",
+      "id": "termite-mound",
+      "data": {
+        "name": "Termite Mound",
+        "group": "blocks",
+        "subgroup": "natural",
+        "overview": "A crumbly brown block that goes with termite colonies. For now it's decorative.",
+        "fields": {
+          "requiredTool": "None (breaks as fast as dirt)",
+          "lightLevel": "0",
+          "drops": "Nothing yet (no loot table)",
+          "obtainedFrom": "Creative menu only for now. It doesn't generate in the world yet.",
+          "craftingRecipe": "None",
+          "usedToCraft": "Nothing yet",
+          "craftedAt": "—",
+          "behavior": "No special behavior yet."
+        },
+        "related": [
+          "termite",
+          "termite-nest"
+        ],
+        "versionAdded": "1.0.0"
+      }
+    },
+    {
+      "action": "upsert",
+      "collection": "wiki",
+      "id": "termite-nest",
+      "data": {
+        "name": "Termite Nest",
+        "group": "blocks",
+        "subgroup": "natural",
+        "overview": "A home for [[termite|termites]]. Termites crawl inside, rest and leave eggs behind.",
+        "fields": {
+          "requiredTool": "None (breaks as fast as dirt)",
+          "lightLevel": "0",
+          "drops": "Nothing yet (no loot table)",
+          "obtainedFrom": "Creative menu only for now.",
+          "craftingRecipe": "None",
+          "usedToCraft": "Nothing yet",
+          "craftedAt": "—",
+          "behavior": "Holds up to 3 termites. A termite right next to the nest crawls in. 30 seconds later it comes out and the nest gains an egg (shown on the block, up to 2). Termites inside are lost if the nest is broken. Pistons break it."
+        },
+        "notes": "More nest mechanics are planned.",
+        "related": [
+          "termite",
+          "termite-mound",
+          "hollow-logs"
+        ],
+        "versionAdded": "1.0.0"
+      }
+    },
+    {
+      "action": "upsert",
+      "collection": "wiki",
+      "id": "hollow-logs",
+      "data": {
+        "name": "Hollow Logs",
+        "group": "blocks",
+        "subgroup": "functional",
+        "overview": "A hollowed-out version of every log, stem and bamboo block, stripped ones included. You can put things inside: blocks, plants, crops, water, powder snow, even a tiny aquarium.",
+        "fields": {
+          "requiredTool": "Axe, like the log it's made from",
+          "lightLevel": "Same as the block inside it (0 when empty)",
+          "drops": "Itself",
+          "obtainedFrom": "Planned: made by [[termite|termites]] (not in the mod yet). For now, creative menu only.",
+          "craftingRecipe": "None yet",
+          "usedToCraft": "1 Hollow Log → 1 Planks of its wood (shapeless)",
+          "craftedAt": "Inventory crafting grid or Crafting Table",
+          "behavior": "Hollow, so you can fill it with things. See below."
+        },
+        "variants": [
+          {
+            "name": "Hollow Oak Log",
+            "note": "Stripped: Hollow Stripped Oak Log. Crafts into Oak Planks."
+          },
+          {
+            "name": "Hollow Spruce Log",
+            "note": "Stripped: Hollow Stripped Spruce Log. Crafts into Spruce Planks."
+          },
+          {
+            "name": "Hollow Birch Log",
+            "note": "Stripped: Hollow Stripped Birch Log. Crafts into Birch Planks."
+          },
+          {
+            "name": "Hollow Jungle Log",
+            "note": "Stripped: Hollow Stripped Jungle Log. Crafts into Jungle Planks."
+          },
+          {
+            "name": "Hollow Acacia Log",
+            "note": "Stripped: Hollow Stripped Acacia Log. Crafts into Acacia Planks."
+          },
+          {
+            "name": "Hollow Dark Oak Log",
+            "note": "Stripped: Hollow Stripped Dark Oak Log. Crafts into Dark Oak Planks."
+          },
+          {
+            "name": "Hollow Mangrove Log",
+            "note": "Stripped: Hollow Stripped Mangrove Log. Crafts into Mangrove Planks."
+          },
+          {
+            "name": "Hollow Cherry Log",
+            "note": "Stripped: Hollow Stripped Cherry Log. Crafts into Cherry Planks."
+          },
+          {
+            "name": "Hollow Bamboo Block",
+            "note": "Stripped: Hollow Stripped Bamboo Block. Crafts into Bamboo Planks."
+          },
+          {
+            "name": "Hollow Crimson Stem",
+            "note": "Stripped: Hollow Stripped Crimson Stem. Crafts into Crimson Planks. Doesn't burn."
+          },
+          {
+            "name": "Hollow Warped Stem",
+            "note": "Stripped: Hollow Stripped Warped Stem. Crafts into Warped Planks. Doesn't burn."
+          },
+          {
+            "name": "Hollow Baobab Log",
+            "note": "Stripped: Hollow Stripped Baobab Log. Crafts into [[baobab-wood-set|Baobab Planks]]."
+          },
+          {
+            "name": "Hollow Palm Log",
+            "note": "Stripped: Hollow Stripped Palm Log. Crafts into [[palm-wood-set|Palm Planks]]."
+          }
+        ],
+        "body": [
+          {
+            "type": "h2",
+            "text": "Putting things inside"
+          },
+          {
+            "type": "bullet",
+            "text": "Use a block on the inside of the log to put it in: most full blocks, slabs, stairs, a flower pot, plants, saplings, mushrooms and crops. Shulker boxes, tall flowers and chorus plants are not allowed."
+          },
+          {
+            "type": "bullet",
+            "text": "Whatever is inside sets the light level, so a glowing block makes the log glow."
+          },
+          {
+            "type": "bullet",
+            "text": "Sneak with an empty hand to take it out again."
+          },
+          {
+            "type": "bullet",
+            "text": "Pink Petals stack up to 4 inside, and a flower pot inside can hold a plant."
+          },
+          {
+            "type": "h2",
+            "text": "Farming"
+          },
+          {
+            "type": "bullet",
+            "text": "Use a hoe on dirt or grass inside to turn it into farmland, then plant crops. Crops grow twice as fast in hollow logs."
+          },
+          {
+            "type": "h2",
+            "text": "Water and the aquarium"
+          },
+          {
+            "type": "bullet",
+            "text": "Use a water or powder snow bucket to fill it, and an empty bucket to take it back."
+          },
+          {
+            "type": "bullet",
+            "text": "Put glass (any glass, stained and tinted too) on the water to make an aquarium: the water stays inside and fish can live in it. It also waters farmland nearby."
+          },
+          {
+            "type": "h2",
+            "text": "Other"
+          },
+          {
+            "type": "bullet",
+            "text": "Use an axe to strip it. What's inside stays."
+          },
+          {
+            "type": "bullet",
+            "text": "Breaking a log that holds water or powder snow leaves the water or snow behind."
+          }
+        ],
+        "notes": "Planned: termites will turn logs into hollow logs.",
+        "related": [
+          "termite",
+          "termite-nest",
+          "baobab-wood-set",
+          "palm-wood-set"
+        ],
+        "versionAdded": "1.0.0"
+      }
+    },
+    {
+      "action": "upsert",
+      "collection": "wiki",
+      "id": "baobab-wood-set",
+      "data": {
+        "name": "Baobab Wood Set",
+        "group": "blocks",
+        "subgroup": "building",
+        "overview": "All the building blocks made from [[baobab-tree|Baobab]] wood. They work just like oak wood.",
+        "fields": {
+          "requiredTool": "Axe (fastest)",
+          "lightLevel": "0",
+          "drops": "Each block drops itself (a double slab drops 2 slabs)",
+          "obtainedFrom": "Baobab Logs come from [[baobab-tree|Baobab Trees]]. The rest are crafted from them.",
+          "craftingRecipe": "See each variant below.",
+          "usedToCraft": "Baobab Planks work anywhere other planks do: sticks, crafting tables, wooden tools and more.",
+          "craftedAt": "Crafting Table. Planks, wood, buttons and pressure plates also fit the inventory grid.",
+          "behavior": "Burns like other wood. An axe strips Baobab Logs and Baobab Wood. The door, trapdoor, button and pressure plate work like the oak ones."
+        },
+        "variants": [
+          {
+            "name": "Baobab Log",
+            "note": "From [[baobab-tree|Baobab Trees]]. Strip it with an axe."
+          },
+          {
+            "name": "Baobab Wood",
+            "note": "4 Baobab Logs (2×2) → 3"
+          },
+          {
+            "name": "Stripped Baobab Log",
+            "note": "Use an axe on a Baobab Log"
+          },
+          {
+            "name": "Stripped Baobab Wood",
+            "note": "4 Stripped Baobab Logs (2×2) → 3, or use an axe on Baobab Wood"
+          },
+          {
+            "name": "Baobab Planks",
+            "note": "1 Baobab Log, Wood or a stripped one → 4"
+          },
+          {
+            "name": "Baobab Stairs",
+            "note": "6 Planks → 4"
+          },
+          {
+            "name": "Baobab Slab",
+            "note": "3 Planks in a row → 6"
+          },
+          {
+            "name": "Baobab Fence",
+            "note": "4 Planks + 2 Sticks → 3"
+          },
+          {
+            "name": "Baobab Fence Gate",
+            "note": "4 Sticks + 2 Planks → 1"
+          },
+          {
+            "name": "Baobab Door",
+            "note": "6 Planks (2 wide, 3 tall) → 3"
+          },
+          {
+            "name": "Baobab Trapdoor",
+            "note": "6 Planks (3 wide, 2 tall) → 2"
+          },
+          {
+            "name": "Baobab Pressure Plate",
+            "note": "2 Planks side by side → 1"
+          },
+          {
+            "name": "Baobab Button",
+            "note": "1 Plank → 1"
+          }
+        ],
+        "notes": "Not in the mod yet: signs, hanging signs and boats (signs are a TODO in the code).",
+        "related": [
+          "baobab-tree",
+          "hollow-logs",
+          "palm-wood-set"
+        ],
+        "versionAdded": "1.0.0"
+      }
+    },
+    {
+      "action": "upsert",
+      "collection": "wiki",
+      "id": "palm-wood-set",
+      "data": {
+        "name": "Palm Wood Set",
+        "group": "blocks",
+        "subgroup": "building",
+        "overview": "All the building blocks made from [[palm-tree|Palm]] wood. They work just like oak wood.",
+        "fields": {
+          "requiredTool": "Axe (fastest)",
+          "lightLevel": "0",
+          "drops": "Each block drops itself (a double slab drops 2 slabs)",
+          "obtainedFrom": "Palm Logs come from [[palm-tree|Palm Trees]]. The rest are crafted from them.",
+          "craftingRecipe": "See each variant below.",
+          "usedToCraft": "Palm Planks work anywhere other planks do: sticks, crafting tables, wooden tools and more.",
+          "craftedAt": "Crafting Table. Planks, wood, buttons and pressure plates also fit the inventory grid.",
+          "behavior": "Burns like other wood. An axe strips Palm Logs and Palm Wood. The door, trapdoor, button and pressure plate work like the oak ones."
+        },
+        "variants": [
+          {
+            "name": "Palm Log",
+            "note": "From [[palm-tree|Palm Trees]]. Strip it with an axe."
+          },
+          {
+            "name": "Palm Wood",
+            "note": "4 Palm Logs (2×2) → 3"
+          },
+          {
+            "name": "Stripped Palm Log",
+            "note": "Use an axe on a Palm Log"
+          },
+          {
+            "name": "Stripped Palm Wood",
+            "note": "4 Stripped Palm Logs (2×2) → 3, or use an axe on Palm Wood"
+          },
+          {
+            "name": "Palm Planks",
+            "note": "1 Palm Log, Wood or a stripped one → 4"
+          },
+          {
+            "name": "Palm Stairs",
+            "note": "6 Planks → 4"
+          },
+          {
+            "name": "Palm Slab",
+            "note": "3 Planks in a row → 6"
+          },
+          {
+            "name": "Palm Fence",
+            "note": "4 Planks + 2 Sticks → 3"
+          },
+          {
+            "name": "Palm Fence Gate",
+            "note": "4 Sticks + 2 Planks → 1"
+          },
+          {
+            "name": "Palm Door",
+            "note": "6 Planks (2 wide, 3 tall) → 3"
+          },
+          {
+            "name": "Palm Trapdoor",
+            "note": "6 Planks (3 wide, 2 tall) → 2"
+          },
+          {
+            "name": "Palm Pressure Plate",
+            "note": "2 Planks side by side → 1"
+          },
+          {
+            "name": "Palm Button",
+            "note": "1 Plank → 1"
+          }
+        ],
+        "notes": "Not in the mod yet: signs, hanging signs and boats (signs are a TODO in the code).",
+        "related": [
+          "palm-tree",
+          "hollow-logs",
+          "baobab-wood-set"
+        ],
+        "versionAdded": "1.0.0"
+      }
+    },
+    {
+      "action": "upsert",
+      "collection": "wiki",
+      "id": "baobab-tree",
+      "data": {
+        "name": "Baobab Tree",
+        "group": "world",
+        "subgroup": "trees",
+        "overview": "A huge savanna tree with a thick trunk, a branching crown and [[baobab-fruit]] hanging under its leaves.",
+        "fields": {
+          "growsIn": "[[savanna|Savanna]] and Savanna Plateau (rare: about one per 16 chunks)",
+          "sapling": "Baobab Sapling. Drops from Baobab Leaves (5%, up to 10% with Fortune). Fits in a flower pot.",
+          "howItGrows": "Plant 9 saplings in a 3×3 square. A single sapling never grows. Bone Meal works 30% of the time.",
+          "woodSet": "[[baobab-wood-set]]",
+          "fruitAndDrops": "Generates with [[baobab-fruit]] under its leaves (up to 2 per bunch, at random ripeness). Leaves drop saplings and sometimes sticks.",
+          "sizes": "Trunk 14–17 blocks tall, 7 blocks wide at the bottom and 5 wide from a third of the way up, with 3–4 branches per layer near the top (each 4–7 blocks long)."
+        },
+        "notes": "Ostriches prefer to lay their [[ostrich-egg|eggs]] next to Baobab Logs.",
+        "related": [
+          "baobab-wood-set",
+          "baobab-fruit",
+          "savanna",
+          "ostrich",
+          "hollow-logs"
+        ],
+        "versionAdded": "1.0.0"
+      }
+    },
+    {
+      "action": "upsert",
+      "collection": "wiki",
+      "id": "palm-tree",
+      "data": {
+        "name": "Palm Tree",
+        "group": "world",
+        "subgroup": "trees",
+        "overview": "A tall, leaning palm tree with long fronds, found on beaches and in deserts.",
+        "fields": {
+          "growsIn": "[[beach|Beaches]] (about one per 5 chunks), [[desert|Deserts]] (rare: about one per 12 chunks) and around every [[desert-oasis]]",
+          "sapling": "Palm Sapling. Drops from Palm Leaves (5%, up to 10% with Fortune). Can be planted on sand as well as dirt and grass. Fits in a flower pot.",
+          "howItGrows": "A single sapling grows into a tree, like oak. Bone Meal speeds it up.",
+          "woodSet": "[[palm-wood-set]]",
+          "fruitAndDrops": "No fruit yet. Leaves drop saplings and sometimes sticks.",
+          "sizes": "Trunk 7–12 blocks tall, leaning 3–6 blocks to one side in one of 3 curve shapes."
+        },
+        "notes": "Palm leaves stay alive up to 14 blocks from a palm log (normal leaves: 7), so the long fronds don't decay.",
+        "related": [
+          "palm-wood-set",
+          "beach",
+          "desert",
+          "desert-oasis",
+          "hollow-logs"
+        ],
+        "versionAdded": "1.0.0"
+      }
+    },
+    {
+      "action": "upsert",
+      "collection": "wiki",
+      "id": "desert-oasis",
+      "data": {
+        "name": "Desert Oasis",
+        "group": "world",
+        "subgroup": "structures",
+        "overview": "A pond in the desert, ringed by grass, flowers and [[palm-tree|palm trees]], with camels nearby and tropical fish in the water.",
+        "fields": {
+          "location": "[[desert]]",
+          "frequency": "Common: one chance in every 8×8-chunk area (at least 4 chunks apart), wherever that spot is desert.",
+          "loot": "None (no chests)",
+          "mobsPresent": "2–3 Camels (one is a baby when there are 3) and a school of 5–9 Tropical Fish."
+        },
+        "body": [
+          {
+            "type": "bullet",
+            "text": "The pond comes in 3 shapes: a wobbly oval (30%), scattered pools (30%) or clustered circles (40%). An oval pond is about 25–50 blocks across."
+          },
+          {
+            "type": "bullet",
+            "text": "The water is 1–6 blocks deep, with lily pads, seagrass, sea pickles, kelp and coral fans."
+          },
+          {
+            "type": "bullet",
+            "text": "Around it: grass, flowers (poppies, dandelions, cornflowers, alliums), sugar cane, cactus and palm trees, with more trees close to the water."
+          }
+        ],
+        "notes": "Still being worked on: there's a \"TODO: Fix this!!!\" in OasisPiece.java.",
+        "related": [
+          "desert",
+          "palm-tree"
+        ],
+        "versionAdded": "1.0.0"
+      }
+    },
+    {
+      "action": "upsert",
+      "collection": "wiki",
+      "id": "savanna",
+      "data": {
+        "name": "Savanna",
+        "group": "world",
+        "subgroup": "biomes",
+        "vanilla": true,
+        "overview": "Vanilla biome. The mod adds [[baobab-tree|Baobab Trees]] here, in Savanna Plateau too.",
+        "fields": {
+          "temperature": "Hot (vanilla)",
+          "commonMobs": "Vanilla mobs. Nothing from the mod spawns here yet.",
+          "commonBlocks": "Mod adds: [[baobab-tree|Baobab Trees]] with [[baobab-fruit]].",
+          "structures": "Vanilla only (like villages).",
+          "weather": "Never rains (vanilla)."
+        },
+        "body": [
+          {
+            "type": "h2",
+            "text": "What the mod adds here"
+          },
+          {
+            "type": "bullet",
+            "text": "[[baobab-tree|Baobab Trees]] (rare: about one per 16 chunks), in Savanna and Savanna Plateau."
+          },
+          {
+            "type": "bullet",
+            "text": "[[baobab-fruit]] hanging under their leaves."
+          }
+        ],
+        "related": [
+          "baobab-tree",
+          "baobab-fruit",
+          "ostrich"
+        ],
+        "versionAdded": "1.0.0"
+      }
+    },
+    {
+      "action": "upsert",
+      "collection": "wiki",
+      "id": "desert",
+      "data": {
+        "name": "Desert",
+        "group": "world",
+        "subgroup": "biomes",
+        "vanilla": true,
+        "overview": "Vanilla biome. The mod adds rare [[palm-tree|Palm Trees]] and the [[desert-oasis]] here.",
+        "fields": {
+          "temperature": "Hot (vanilla)",
+          "commonMobs": "Vanilla mobs. Each [[desert-oasis]] also brings Camels and Tropical Fish.",
+          "commonBlocks": "Mod adds: [[palm-tree|Palm Trees]] (rare: about one per 12 chunks).",
+          "structures": "Vanilla ones, plus the [[desert-oasis]].",
+          "weather": "Never rains (vanilla)."
+        },
+        "body": [
+          {
+            "type": "h2",
+            "text": "What the mod adds here"
+          },
+          {
+            "type": "bullet",
+            "text": "[[palm-tree|Palm Trees]] (rare: about one per 12 chunks)."
+          },
+          {
+            "type": "bullet",
+            "text": "The [[desert-oasis]] structure, with more palm trees around its pond."
+          }
+        ],
+        "related": [
+          "palm-tree",
+          "desert-oasis"
+        ],
+        "versionAdded": "1.0.0"
+      }
+    },
+    {
+      "action": "upsert",
+      "collection": "wiki",
+      "id": "beach",
+      "data": {
+        "name": "Beach",
+        "group": "world",
+        "subgroup": "biomes",
+        "vanilla": true,
+        "overview": "Vanilla biome. The mod adds [[palm-tree|Palm Trees]] here.",
+        "fields": {
+          "temperature": "Mild (vanilla)",
+          "commonMobs": "Vanilla mobs. Nothing from the mod spawns here yet.",
+          "commonBlocks": "Mod adds: [[palm-tree|Palm Trees]] (about one per 5 chunks).",
+          "structures": "Vanilla only.",
+          "weather": "Rain (vanilla)."
+        },
+        "body": [
+          {
+            "type": "h2",
+            "text": "What the mod adds here"
+          },
+          {
+            "type": "bullet",
+            "text": "[[palm-tree|Palm Trees]] (about one per 5 chunks)."
+          }
+        ],
+        "related": [
+          "palm-tree"
+        ],
+        "versionAdded": "1.0.0"
+      }
+    },
+    {
+      "action": "upsert",
+      "collection": "wiki",
+      "id": "jungle",
+      "data": {
+        "name": "Jungle",
+        "group": "world",
+        "subgroup": "biomes",
+        "vanilla": true,
+        "overview": "Vanilla biome. With the mod, its Jungle Leaves sometimes drop a [[banana]].",
+        "fields": {
+          "temperature": "Warm (vanilla)",
+          "commonMobs": "Vanilla mobs. Nothing from the mod spawns here yet.",
+          "commonBlocks": "Mod change: Jungle Leaves can drop a [[banana]] (0.5%, about 0.8% with Fortune III).",
+          "structures": "Vanilla only.",
+          "weather": "Rain (vanilla)."
+        },
+        "body": [
+          {
+            "type": "h2",
+            "text": "What the mod adds here"
+          },
+          {
+            "type": "bullet",
+            "text": "Jungle Leaves can drop a [[banana]] when they break or decay (0.5%, about 0.8% with Fortune III)."
+          }
+        ],
+        "notes": "Bananas come from Jungle Leaves anywhere, not just in jungles.",
+        "related": [
+          "banana",
+          "monkey"
+        ],
+        "versionAdded": "1.0.0"
+      }
+    }
+  ]
+}

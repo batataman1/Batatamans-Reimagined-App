@@ -11,6 +11,17 @@ import { openSettings, connectForm } from './settings.js';
 import { doPull, doPush } from './syncui.js';
 
 const LAST_TAB = 'brr.lastTab';
+const LAST_PATHS = 'brr.lastPaths';
+
+// Addresses look like #/wiki/p/ostrich : the tab id, then a path inside the tab.
+function parseHash(hash) {
+  const parts = String(hash).replace(/^#\/?/, '').split('/').filter(Boolean);
+  return { id: parts[0] || '', path: parts.slice(1).join('/') };
+}
+
+function loadLastPaths() {
+  try { return JSON.parse(localStorage.getItem(LAST_PATHS) || '{}') || {}; } catch { return {}; }
+}
 
 export function mountShell(root) {
   const view = h('main', { id: 'view', class: 'view', role: 'tabpanel', tabindex: '-1' });
@@ -20,7 +31,8 @@ export function mountShell(root) {
   const tabButtons = TABS.map(t => h('button', {
     type: 'button', class: 'tab', role: 'tab', id: `tab-${t.id}`, 'aria-controls': 'view',
     dataset: { tab: t.id },
-    onclick: () => go(t.id),
+    // A second tap on the open tab goes back to that tab's start.
+    onclick: () => go(t.id, t.id === current ? '' : null),
   }, icon(t.icon, { size: 24 }), h('span', { class: 'tab-label', text: t.label })));
 
   const tablist = h('nav', { class: 'tabs', role: 'tablist', 'aria-label': 'Sections', onkeydown: onTabKey }, tabButtons);
@@ -56,15 +68,25 @@ export function mountShell(root) {
 
   let cleanup = null;
   let current = null;
+  const lastPaths = loadLastPaths();
 
-  function go(id, { focus = false } = {}) {
-    if (!TABS.some(t => t.id === id)) id = TABS[0].id;
-    if (location.hash !== `#/${id}`) history.replaceState(null, '', `#/${id}`);
-    render(id, focus);
+  /** Open a tab. path null = where you last were in that tab, '' = the tab's start. */
+  function go(id, path = null, { focus = false } = {}) {
+    if (!TABS.some(t => t.id === id)) { id = TABS[0].id; path = null; }
+    if (path === null) path = lastPaths[id] || '';
+    const hash = `#/${id}${path ? `/${path}` : ''}`;
+    if (location.hash !== hash) history.replaceState(null, '', hash);
+    render(id, path, focus);
   }
 
-  function render(id, focus) {
-    if (id === current) return;
+  function render(id, path, focus) {
+    lastPaths[id] = path;
+    try { localStorage.setItem(LAST_PATHS, JSON.stringify(lastPaths)); } catch { /* storage full or blocked */ }
+    const tab = TABS.find(t => t.id === id);
+    if (id === current) {
+      tab.navigate?.(path);
+      return;
+    }
     current = id;
     localStorage.setItem(LAST_TAB, id);
     tabButtons.forEach(b => {
@@ -75,8 +97,7 @@ export function mountShell(root) {
     view.setAttribute('aria-labelledby', `tab-${id}`);
     cleanup?.();
     clear(view);
-    const tab = TABS.find(t => t.id === id);
-    cleanup = tab.mount(view) || null;
+    cleanup = tab.mount(view, path) || null;
     if (focus) tabButtons.find(b => b.dataset.tab === id)?.focus();
   }
 
@@ -89,11 +110,18 @@ export function mountShell(root) {
     if (e.key === 'End') next = TABS.length - 1;
     if (next === null) return;
     e.preventDefault();
-    go(TABS[next].id, { focus: true });
+    go(TABS[next].id, null, { focus: true });
   }
 
-  window.addEventListener('hashchange', () => go(location.hash.replace(/^#\//, '')));
-  go(location.hash.replace(/^#\//, '') || localStorage.getItem(LAST_TAB) || TABS[0].id);
+  // Links inside tabs (and the phone's back button) change the address; follow it.
+  window.addEventListener('hashchange', () => {
+    const { id, path } = parseHash(location.hash);
+    if (TABS.some(t => t.id === id)) render(id, path, false);
+    else go(TABS[0].id);
+  });
+  const start = parseHash(location.hash);
+  if (TABS.some(t => t.id === start.id)) go(start.id, start.path);
+  else go(localStorage.getItem(LAST_TAB) || TABS[0].id);
 
   /* ---------- Push badge ---------- */
 

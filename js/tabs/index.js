@@ -1,12 +1,11 @@
-// The app's tabs, in order. Each tab module exports { id, label, icon, mount(el) }.
-// mount() may return a cleanup function that runs when you switch away.
+// The app's tabs, in order. Each tab module exports { id, label, icon, mount(el, path) }
+// and optionally navigate(path) for moving around inside the tab (the part of the address
+// after #/<id>/). mount() may return a cleanup function that runs when you switch away.
 
 import { placeholderTab } from './placeholder.js';
+import { wikiTab } from './wiki.js';
 
-const wiki = placeholderTab({
-  id: 'wiki', label: 'Wiki', icon: 'book', collections: ['wiki'], comingIn: '2b',
-  describe: r => [r.data.category, r.data.status === 'planned' ? 'planned' : ''].filter(Boolean).join(', '),
-});
+const wiki = wikiTab;
 
 const tasks = placeholderTab({
   id: 'tasks', label: 'Tasks & Bugs', icon: 'tasks', collections: ['tasks'], comingIn: '2c',

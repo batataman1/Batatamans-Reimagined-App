@@ -71,8 +71,10 @@ async function importUpdate(page, update, { tick = [] } = {}) {
 async function expectBadge(page, text) {
   await page.waitForFunction(t => { const b = document.querySelector('.sync-btn .badge'); return t === null ? b.hidden : (!b.hidden && b.textContent === t); }, text, { timeout: 5000 });
 }
+// These test pages have no group, so the Wiki tab lists them under "Not sorted yet".
+const WIKI_NAMES = '.wiki-unsorted .page-row-name';
 async function savedNames(page) {
-  return page.locator('.saved-name').allTextContents();
+  return page.locator(WIKI_NAMES).allTextContents();
 }
 
 const upd = (changes, summary) => ({ format: 'batataman-import', version: 1, summary, changes });
@@ -97,7 +99,7 @@ await importUpdate(A, upd([
   { action: 'upsert', collection: 'tasks', id: 't-ostrich-ai', data: { title: 'Ostrich flee AI', type: 'task', priority: 'high', status: 'todo', links: [{ collection: 'wiki', id: 'ostrich' }] } },
 ], 'Starter pages'));
 await expectToast(A, /Saved 3 changes/);
-await A.waitForFunction(() => document.querySelectorAll('.saved-name').length === 2);
+await A.waitForFunction(() => document.querySelectorAll('.wiki-unsorted .page-row-name').length === 2);
 assert.deepEqual(await savedNames(A), ['Ostrich', 'Rope']);
 await expectBadge(A, '3');
 await A.screenshot({ path: SHOTS + 'a2-wiki-unpushed.png' });
@@ -131,7 +133,7 @@ await B.waitForFunction(() => !document.querySelector('.welcome'));
 await clearToasts(B);
 await B.locator('.sync-btn').first().click(); // Pull
 await expectToast(B, /Pulled 3 changes/);
-await B.waitForFunction(() => document.querySelectorAll('.saved-name').length === 2);
+await B.waitForFunction(() => document.querySelectorAll('.wiki-unsorted .page-row-name').length === 2);
 await B.screenshot({ path: SHOTS + 'b2-phone-pulled.png' });
 
 // Pull again: up to date
@@ -172,7 +174,7 @@ await dlg(B).getByText('The repo has newer changes').waitFor();
 await B.screenshot({ path: SHOTS + 'b3-newer-changes.png' });
 await clickInDialog(B, 'Pull them, then push');
 await expectToast(B, /Pushed 1 change/);
-await B.waitForFunction(() => [...document.querySelectorAll('.saved-name')].some(e => e.textContent === 'Monkey'));
+await B.waitForFunction(() => [...document.querySelectorAll('.wiki-unsorted .page-row-name')].some(e => e.textContent === 'Monkey'));
 assert.equal(JSON.parse(gh.files()['data/wiki/rope.json']).data.fields.stackSize, '32');
 
 /* ---- Delete through import: unticked by default, needs confirm ---- */
