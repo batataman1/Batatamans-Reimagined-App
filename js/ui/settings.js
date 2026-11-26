@@ -5,7 +5,8 @@ import { store } from '../core/store.js';
 import { loadConnection, saveConnection, forgetToken } from '../core/sync.js';
 import { testConnection } from '../core/github.js';
 import { APP_VERSION, DEFAULT_OWNER, DEFAULT_DATA_REPO } from '../config/app.js';
-import { getThemeState, setTheme, setCustomColors, turnOffCustomColors, activeColors, onThemeChange, themesByMode, themeById } from './theme.js';
+import { getThemeState, setStyle, setColor, setCustomColors, turnOffCustomColors, activeColors, onThemeChange } from './theme.js';
+import { STYLES, COLORS, buildTheme } from '../config/themes.js';
 import { openModal, confirmDialog, toast } from './dialogs.js';
 import { icon } from './icons.js';
 import { openImport, copyTasksForClaude } from './claudeui.js';
@@ -57,41 +58,47 @@ function claudeSection(m) {
 /* ---------- Theme ---------- */
 
 function themeSection(cleanups) {
-  const wrap = h('div');
+  const wrap = h('div', { class: 'theme-picker' });
   const render = () => {
     const state = getThemeState();
-    const active = state.custom?.on ? 'custom' : state.id;
-    const groups = themesByMode();
+    const custom = !!state.custom?.on;
+    const styleName = STYLES.find(x => x.id === state.style)?.name;
+    const colorName = COLORS.find(x => x.id === state.color)?.name;
     clear(wrap,
-      themeGroup('Dark', groups.dark, active, state.lastDark),
-      themeGroup('Light', groups.light, active, state.lastLight),
-      h('p', { class: 'muted small', text: 'The sun and moon button switches between the dark and light theme you picked last.' }),
+      h('div', { class: 'picker-row' },
+        h('span', { class: 'picker-label', id: 'style-label', text: 'Style' }),
+        h('div', { class: 'styles', role: 'radiogroup', 'aria-labelledby': 'style-label' },
+          STYLES.map(st => {
+            const t = buildTheme(st.id, state.color);
+            return h('button', {
+              type: 'button', class: 'style-btn', role: 'radio',
+              'aria-checked': !custom && st.id === state.style ? 'true' : 'false',
+              onclick: () => setStyle(st.id),
+              style: { '--sw-bg': t.bg, '--sw-panel': t.panel, '--sw-accent': t.accent },
+            },
+              h('span', { class: 'style-preview', 'aria-hidden': 'true' }, h('span', { class: 'style-dot' })),
+              h('span', { text: st.name }));
+          }))),
+      h('div', { class: 'picker-row' },
+        h('span', { class: 'picker-label', id: 'color-label', text: 'Color' }),
+        h('div', { class: 'colors', role: 'radiogroup', 'aria-labelledby': 'color-label' },
+          COLORS.map(c => {
+            const t = buildTheme(state.style, c.id);
+            return h('button', {
+              type: 'button', class: 'color-btn', role: 'radio', title: c.name, 'aria-label': c.name,
+              'aria-checked': !custom && c.id === state.color ? 'true' : 'false',
+              onclick: () => setColor(c.id),
+              style: { '--sw-bg': t.bg, '--sw-accent': t.accent },
+            });
+          }))),
+      h('p', { class: 'muted small', text: custom
+        ? 'Using your custom colors. Pick a style or color to go back to the themes.'
+        : `${styleName} ${colorName.toLowerCase()}. The sun and moon button switches between the dark and light style you used last.` }),
       customColors(state));
   };
   render();
   cleanups.push(onThemeChange(render));
   return wrap;
-}
-
-function themeGroup(title, themes, active, remembered) {
-  const current = themes.find(t => t.id === active) || themeById(remembered);
-  const label = h('span', { class: 'muted', text: current?.name || '' });
-  const group = h('div', { class: 'swatches', role: 'radiogroup', 'aria-label': `${title} themes` },
-    themes.map(t => swatch(t, active === t.id, label)));
-  return h('div', { class: 'theme-group' },
-    h('div', { class: 'theme-group-head' }, h('h4', { text: title }), label),
-    group);
-}
-
-function swatch(t, selected, label) {
-  return h('button', {
-    type: 'button', class: 'swatch', role: 'radio', 'aria-checked': selected ? 'true' : 'false',
-    'aria-label': t.name, title: t.name,
-    onclick: () => setTheme(t.id),
-    onpointerenter: () => { label.textContent = t.name; },
-    style: { '--sw-bg': t.bg, '--sw-panel': t.panel, '--sw-accent': t.accent },
-  },
-    h('span', { class: 'swatch-panel', 'aria-hidden': 'true' }, h('span', { class: 'swatch-accent' })));
 }
 
 function customColors(state) {

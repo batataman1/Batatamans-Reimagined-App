@@ -1,8 +1,9 @@
 // Offline support. Keeps a copy of the app's files so it opens without internet.
-// VERSION changes whenever any app file changes; the app then offers "Reload" to update.
+// VERSION and FILES are filled in by dev/build.py. VERSION must change whenever any app file
+// changes; the app then offers "Reload" to update.
 // Requests to GitHub's API are never cached here.
 
-const VERSION = 'a19f843283';
+const VERSION = 'e2e01e1654';
 const CACHE = `brr-app-${VERSION}`;
 const FILES = [
   "./index.html",
