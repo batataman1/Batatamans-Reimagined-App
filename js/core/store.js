@@ -53,10 +53,11 @@ export const store = {
     return row && !row.deleted ? row : null;
   },
 
-  async put(collection, id, data, { silent = false } = {}) {
+  /** source: who saved it (e.g. 'editor'), passed on to listeners so a screen can ignore its own saves. */
+  async put(collection, id, data, { silent = false, source = null } = {}) {
     const row = { key: `${collection}/${id}`, collection, id, data, updatedAt: now(), dirty: true, deleted: false };
     await idb.put('records', row);
-    if (!silent) this.emit({ type: 'record', collection, id });
+    if (!silent) this.emit({ type: 'record', collection, id, source });
     return row;
   },
 
@@ -77,10 +78,10 @@ export const store = {
     return row && !row.deleted ? row : null;
   },
 
-  async putFile(path, blob) {
+  async putFile(path, blob, { source = null } = {}) {
     const row = { path, blob, mime: blob.type || mimeFromPath(path), updatedAt: now(), dirty: true, deleted: false };
     await idb.put('files', row);
-    this.emit({ type: 'file', path });
+    this.emit({ type: 'file', path, source });
     return row;
   },
 

@@ -32,7 +32,7 @@ export function linkTargets(text) {
   return out;
 }
 
-const nameFor = (wiki, target, label) => {
+export const nameFor = (wiki, target, label) => {
   if (label) return label.trim();
   const page = wiki.get(targetId(target));
   if (page) return String(page.data.name || '').trim() || humanize(page.id);
@@ -76,7 +76,7 @@ export function renderText(text, wiki) {
   return frag;
 }
 
-const MARK_RE = /\*\*([^*]+)\*\*|(?<![*\w])\*([^*\s][^*]*?)\*(?![*\w])|`([^`]+)`/g;
+export const MARK_RE = /\*\*([^*]+)\*\*|(?<![*\w])\*([^*\s][^*]*?)\*(?![*\w])|`([^`]+)`/g;
 
 function marks(s) {
   const frag = document.createDocumentFragment();
@@ -93,14 +93,16 @@ function marks(s) {
 }
 
 /**
- * The page text. images(src) returns an <img> (or placeholder) for a file path.
- * Checkboxes are shown but can't be ticked here; editing arrives with the editor.
+ * The page text. image(src, caption) returns the picture element for a file path.
+ * onToggle(blockIndex, checked) makes the checkboxes tickable.
  */
-export function renderBody(blocks, wiki, { image } = {}) {
+export function renderBody(blocks, wiki, { image, onToggle } = {}) {
   const out = document.createDocumentFragment();
   let list = null;
   let listType = null;
-  for (const b of Array.isArray(blocks) ? blocks : []) {
+  const all = Array.isArray(blocks) ? blocks : [];
+  for (let index = 0; index < all.length; index++) {
+    const b = all[index];
     if (!b || typeof b !== 'object') continue;
     const type = b.type || 'p';
     if (type === 'bullet' || type === 'number') {
@@ -119,11 +121,16 @@ export function renderBody(blocks, wiki, { image } = {}) {
       case 'h3': out.append(h('h4', { class: 'b-h3' }, renderText(b.text, wiki))); break;
       case 'quote': out.append(h('blockquote', { class: 'b-quote' }, renderText(b.text, wiki))); break;
       case 'divider': out.append(h('hr', { class: 'b-divider' })); break;
-      case 'todo':
-        out.append(h('div', { class: `b-todo${b.checked ? ' done' : ''}` },
-          h('input', { type: 'checkbox', checked: !!b.checked, disabled: true, 'aria-label': b.checked ? 'Done' : 'Not done' }),
+      case 'todo': {
+        const i = index;
+        out.append(h('label', { class: `b-todo${b.checked ? ' done' : ''}` },
+          h('input', {
+            type: 'checkbox', checked: !!b.checked, disabled: !onToggle, 'aria-label': plainText(b.text, wiki) || 'Checkbox',
+            onchange: e => onToggle?.(i, e.target.checked),
+          }),
           h('span', renderText(b.text, wiki))));
         break;
+      }
       case 'image':
         out.append(h('figure', { class: 'b-image' },
           image ? image(b.src, b.caption || '') : null,

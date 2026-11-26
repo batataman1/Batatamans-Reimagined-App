@@ -20,6 +20,7 @@ Serve the repo root, then run the tests (they use a fake GitHub, never the real 
 python3 -m http.server 8123 &
 node dev/test/e2e.mjs      # two simulated devices: connect, import, push, pull, conflicts, themes
 node dev/test/wiki.mjs     # Wiki tab: starter import, groups, pages, links, back button, search, phone
+node dev/test/wikiedit.mjs # Wiki editing: new page, editor, / menu, links, pictures, undo, move, delete
 node dev/test/sw.mjs       # offline loading and the "new version" prompt
 ```
 

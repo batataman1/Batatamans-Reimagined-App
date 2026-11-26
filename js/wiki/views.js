@@ -5,15 +5,17 @@
 //   g/mobs             a group
 //   g/mobs/neutral     a sub-group's pages
 //   p/ostrich          a page
+//   e/ostrich          editing a page (wiki/editor.js)
 //   unsorted           pages that aren't in a group yet
 
 import { h, clear, plural, timeAgo } from '../core/util.js';
 import { store } from '../core/store.js';
-import { ICONS } from '../config/icons.js';
 import { STATUSES } from '../config/wiki.js';
 import { icon } from '../ui/icons.js';
 import { pageName, humanizeId } from './model.js';
 import { renderText, renderBody, plainText, pageLink } from './text.js';
+import { topNav, fileImage, safeIcon } from './parts.js';
+import { editorView, newPageDialog } from './editor.js';
 
 const APP_TITLE = "Batataman's Reimagined";
 
@@ -22,11 +24,15 @@ export function parseWikiPath(path) {
   if (kind === 'g' && a && b) return { view: 'sub', group: a, sub: b };
   if (kind === 'g' && a) return { view: 'group', group: a };
   if (kind === 'p' && a) return { view: 'page', id: a };
+  if (kind === 'e' && a) return { view: 'edit', id: a };
   if (kind === 'unsorted') return { view: 'unsorted' };
   return { view: 'home' };
 }
 
-/** Draw the screen for this address into el. ui keeps state between redraws (the search text). */
+/**
+ * Draw the screen for this address into el. ui keeps state between redraws (the search text)
+ * and moves around (back, go). Returns a function to call when leaving the screen, if it needs one.
+ */
 export function renderWikiView(el, path, wiki, ui) {
   const route = parseWikiPath(path);
   document.title = APP_TITLE;
@@ -34,33 +40,13 @@ export function renderWikiView(el, path, wiki, ui) {
     case 'group': return groupView(el, wiki, ui, route.group);
     case 'sub': return subView(el, wiki, ui, route.group, route.sub);
     case 'page': return pageView(el, wiki, ui, route.id);
+    case 'edit': return wiki.get(route.id) ? editorView(el, wiki, ui, route.id) : missingPageView(el, wiki, ui, route.id);
     case 'unsorted': return unsortedView(el, wiki, ui);
     default: return homeView(el, wiki, ui);
   }
 }
 
 /* ---------- Small pieces ---------- */
-
-const safeIcon = (name, size) => icon(ICONS[name] ? name : 'book', { size });
-
-/**
- * The row above each screen's title: a Back button and the path to this screen.
- * Back returns to the screen you came from; if you opened this screen directly,
- * it goes one level up (parent is the address of that level, after #/wiki/).
- */
-function topNav(ui, parent, ...items) {
-  const parts = [];
-  items.forEach((it, i) => {
-    if (i) parts.push(h('span', { class: 'crumb-sep', 'aria-hidden': 'true', text: '›' }));
-    parts.push(it.href ? h('a', { href: it.href, text: it.label }) : h('span', { text: it.label }));
-  });
-  return h('div', { class: 'wiki-nav' },
-    h('button', {
-      type: 'button', class: 'btn btn-small back-btn', title: 'Back to where you came from',
-      onclick: () => ui.back(parent),
-    }, icon('back', { size: 16 }), 'Back'),
-    h('nav', { class: 'crumbs', 'aria-label': 'You are here' }, parts));
-}
 
 function tags(page, wiki) {
   const out = [];
@@ -78,38 +64,6 @@ function tags(page, wiki) {
 function short(text, max = 130) {
   const s = String(text || '').replace(/\s+/g, ' ').trim();
   return s.length > max ? s.slice(0, max - 1) + '…' : s;
-}
-
-/* Pictures are files on this device (synced through files/ in the data repo). */
-const urls = new Map();
-store.on(d => {
-  if (d?.type === 'file' || d?.type === 'sync') {
-    for (const u of urls.values()) URL.revokeObjectURL(u);
-    urls.clear();
-  }
-});
-
-/** A picture from this device's files, or a placeholder. */
-export function fileImage(path, alt, { className = '', placeholder = 'No picture yet', size = 28 } = {}) {
-  const box = h('span', { class: `pic ${className}`.trim() });
-  const showPlaceholder = text => {
-    box.classList.add('is-empty');
-    clear(box, h('span', { class: 'pic-empty' }, icon('image', { size }), text ? h('span', { text }) : null));
-  };
-  if (!path) { showPlaceholder(placeholder); return box; }
-  showPlaceholder('');
-  (async () => {
-    let url = urls.get(path);
-    if (!url) {
-      const f = await store.getFile(path);
-      if (!f?.blob) { showPlaceholder('Picture not on this device yet'); return; }
-      url = URL.createObjectURL(f.blob);
-      urls.set(path, url);
-    }
-    box.classList.remove('is-empty');
-    clear(box, h('img', { src: url, alt: alt || '', decoding: 'async' }));
-  })();
-  return box;
 }
 
 /** The page's picture, or its sub-group's icon until it has one. */
@@ -131,6 +85,10 @@ function pageRow(page, wiki, { showPlace = false, snippet } = {}) {
 }
 
 const pageList = (pages, wiki, opts) => h('ul', { class: 'page-list' }, pages.map(p => pageRow(p, wiki, opts)));
+
+const newPageButton = (wiki, ui, where = '') => h('button', {
+  type: 'button', class: 'btn btn-small head-action', onclick: () => newPageDialog(wiki, ui, { where }),
+}, icon('plus', { size: 16 }), 'New page');
 
 /* ---------- Start screen ---------- */
 
@@ -155,7 +113,7 @@ function homeView(el, wiki, ui) {
       h('span', { class: 'tile-count', 'aria-label': plural(wiki.countIn(g.id), 'page'), text: String(wiki.countIn(g.id)) })))),
     wiki.unsorted.length ? h('section', { class: 'wiki-section wiki-unsorted' },
       h('h2', { text: 'Not sorted yet' }),
-      h('p', { class: 'muted small', text: "These pages aren't in a group. Moving pages arrives with editing." }),
+      h('p', { class: 'muted small', text: "These pages aren't in a group yet. Open one, tap Edit and choose where it goes." }),
       pageList(wiki.unsorted, wiki)) : null,
     total ? h('section', { class: 'wiki-section' },
       h('h2', { text: 'Recently changed' }),
@@ -184,7 +142,8 @@ function homeView(el, wiki, ui) {
   });
 
   clear(el,
-    h('div', { class: 'tab-head' }, h('h1', { text: 'Wiki' }), h('span', { class: 'muted', text: plural(total, 'page') })),
+    h('div', { class: 'tab-head' }, h('h1', { text: 'Wiki' }), h('span', { class: 'muted', text: plural(total, 'page') }),
+      newPageButton(wiki, ui)),
     h('label', { class: 'search-box' }, icon('search', { size: 18 }), input),
     results, browse);
   update();
@@ -222,7 +181,8 @@ function subView(el, wiki, ui, groupId, subId) {
   clear(el,
     topNav(ui, `g/${g.id}`, { href: '#/wiki', label: 'Wiki' }, { href: `#/wiki/g/${g.id}`, label: g.name }),
     h('div', { class: 'tab-head' }, h('h1', { text: s.name }),
-      h('span', { class: 'muted', text: `${plural(pages.length, 'page')} · ${wiki.templates[s.template]?.name || 'No'} template` })),
+      h('span', { class: 'muted', text: `${plural(pages.length, 'page')} · ${wiki.templates[s.template]?.name || 'No'} template` }),
+      newPageButton(wiki, ui, `${g.id}/${s.id}`)),
     pages.length ? pageList(pages, wiki) : h('p', { class: 'muted', text: 'No pages here yet.' }));
 }
 
@@ -264,7 +224,8 @@ function pageView(el, wiki, ui, id) {
   clear(el, h('article', { class: 'wiki-page', 'aria-labelledby': 'wiki-page-title' },
     h('header', { class: 'wiki-page-head' },
       topNav(ui, place ? `g/${place.group.id}/${place.sub.id}` : 'unsorted', { href: '#/wiki', label: 'Wiki' }, ...where),
-      h('div', { class: 'wiki-title-row' }, h('h1', { id: 'wiki-page-title', text: name }), tags(page, wiki))),
+      h('div', { class: 'wiki-title-row' }, h('h1', { id: 'wiki-page-title', text: name }), tags(page, wiki),
+        h('a', { class: 'btn btn-small head-action', href: `#/wiki/e/${page.id}` }, icon('edit', { size: 16 }), 'Edit'))),
     d.overview ? h('div', { class: 'wiki-overview text' }, renderText(d.overview, wiki)) : h('div', { class: 'wiki-overview' }),
     infobox(page, wiki, tpl, place),
     h('div', { class: 'wiki-main' },
@@ -274,6 +235,14 @@ function pageView(el, wiki, ui, id) {
           v.note ? h('span', { class: 'variant-note text' }, renderText(v.note, wiki)) : null)))) : null,
       body.length ? h('div', { class: 'wiki-body text' }, renderBody(body, wiki, {
         image: (src, alt) => fileImage(src, alt, { className: 'body-pic', placeholder: 'Image missing' }),
+        // Ticking a checkbox while reading saves it right away.
+        onToggle: async (i, checked) => {
+          const fresh = await store.get('wiki', page.id);
+          if (!fresh?.data?.body?.[i]) return;
+          const next = structuredClone(fresh.data);
+          next.body[i].checked = checked;
+          await store.put('wiki', page.id, next);
+        },
       })) : null,
       d.notes ? section('Notes', h('div', { class: 'text' }, renderText(d.notes, wiki))) : null,
       section('Related pages', related.length
@@ -322,7 +291,9 @@ function missingPageView(el, wiki, ui, id) {
     h('div', { class: 'wiki-main' },
       h('div', { class: 'notice' },
         h('p', { text: `There's no page called “${name}” yet.` }),
-        h('p', { class: 'muted', text: 'Creating it from here arrives with editing, in the next update.' })),
+        h('div', { class: 'button-row' },
+          h('button', { type: 'button', class: 'btn btn-primary', onclick: () => newPageDialog(wiki, ui, { id, name }) },
+            icon('plus', { size: 16 }), 'Create this page'))),
       linkedFrom.length ? h('section', { class: 'wiki-section' }, h('h2', { text: 'Linked from' }),
         h('div', { class: 'link-chips' }, linkedFrom.map(p => pageLink(wiki, p.id)))) : null)));
 }
