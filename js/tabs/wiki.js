@@ -1,5 +1,10 @@
 // The Wiki tab. Moving around inside it changes the address (#/wiki/p/ostrich), so the
 // phone's back button and the browser's back/forward buttons work.
+//
+// The on-screen Back button: each history entry reached by tapping a link inside the app is
+// tagged with how many steps it is from where you started (history.state.wikiDepth). If that's
+// more than 0, Back is the browser's back. Otherwise (the screen was opened directly, from a
+// bookmark, a tab button or after a reload) Back goes one level up instead of leaving the app.
 
 import { store } from '../core/store.js';
 import { getWiki } from '../wiki/model.js';
@@ -13,10 +18,17 @@ export const wikiTab = {
   id: 'wiki', label: 'Wiki', icon: 'book',
 
   mount(el, path) {
-    const ui = { query: '' };
     let current = path || '';
     let freshVisit = false;       // true when a link was tapped (start at the top)
+    let depth = history.state?.wikiDepth || 0;
     let token = 0;
+    const ui = {
+      query: '',
+      back(parent) {
+        if (depth > 0) history.back();
+        else location.replace(`#/wiki${parent ? `/${parent}` : ''}`);
+      },
+    };
 
     async function show({ keepScroll = false } = {}) {
       const mine = ++token;
@@ -43,7 +55,8 @@ export const wikiTab = {
     }
 
     const onClick = e => {
-      if (e.target.closest('a[href^="#/wiki"]')) freshVisit = true;
+      const a = e.target.closest('a[href^="#/wiki"]');
+      if (a && a.getAttribute('href') !== location.hash) freshVisit = true;
     };
     el.addEventListener('click', onClick);
 
@@ -58,6 +71,12 @@ export const wikiTab = {
     active = {
       navigate(p) {
         scrollByPath.set(current, window.scrollY);
+        if (freshVisit) {
+          depth += 1;
+          history.replaceState({ ...(history.state || {}), wikiDepth: depth }, '', location.hash);
+        } else {
+          depth = history.state?.wikiDepth || 0;
+        }
         current = p || '';
         show();
       },

@@ -190,6 +190,7 @@ function mergeGroups(rows) {
     if (Array.isArray(d.subgroups)) {
       g.subgroups = d.subgroups.filter(x => x && x.id).map(x => ({
         id: String(x.id), name: String(x.name || humanizeId(x.id)), template: String(x.template || 'item'),
+        icon: String(x.icon || g.subgroups.find(old => old.id === x.id)?.icon || g.icon || 'book'),
       }));
     }
   }

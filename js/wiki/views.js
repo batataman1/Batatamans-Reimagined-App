@@ -31,10 +31,10 @@ export function renderWikiView(el, path, wiki, ui) {
   const route = parseWikiPath(path);
   document.title = APP_TITLE;
   switch (route.view) {
-    case 'group': return groupView(el, wiki, route.group);
-    case 'sub': return subView(el, wiki, route.group, route.sub);
-    case 'page': return pageView(el, wiki, route.id);
-    case 'unsorted': return unsortedView(el, wiki);
+    case 'group': return groupView(el, wiki, ui, route.group);
+    case 'sub': return subView(el, wiki, ui, route.group, route.sub);
+    case 'page': return pageView(el, wiki, ui, route.id);
+    case 'unsorted': return unsortedView(el, wiki, ui);
     default: return homeView(el, wiki, ui);
   }
 }
@@ -43,13 +43,23 @@ export function renderWikiView(el, path, wiki, ui) {
 
 const safeIcon = (name, size) => icon(ICONS[name] ? name : 'book', { size });
 
-function crumbs(...items) {
+/**
+ * The row above each screen's title: a Back button and the path to this screen.
+ * Back returns to the screen you came from; if you opened this screen directly,
+ * it goes one level up (parent is the address of that level, after #/wiki/).
+ */
+function topNav(ui, parent, ...items) {
   const parts = [];
   items.forEach((it, i) => {
     if (i) parts.push(h('span', { class: 'crumb-sep', 'aria-hidden': 'true', text: '›' }));
     parts.push(it.href ? h('a', { href: it.href, text: it.label }) : h('span', { text: it.label }));
   });
-  return h('nav', { class: 'crumbs', 'aria-label': 'You are here' }, parts);
+  return h('div', { class: 'wiki-nav' },
+    h('button', {
+      type: 'button', class: 'btn btn-small back-btn', title: 'Back to where you came from',
+      onclick: () => ui.back(parent),
+    }, icon('back', { size: 16 }), 'Back'),
+    h('nav', { class: 'crumbs', 'aria-label': 'You are here' }, parts));
 }
 
 function tags(page, wiki) {
@@ -102,10 +112,11 @@ export function fileImage(path, alt, { className = '', placeholder = 'No picture
   return box;
 }
 
+/** The page's picture, or its sub-group's icon until it has one. */
 function thumb(page, wiki) {
   if (page.data.picture) return fileImage(page.data.picture, '', { className: 'thumb', placeholder: '', size: 18 });
   const place = wiki.placeOf(page);
-  return h('span', { class: 'pic thumb' }, h('span', { class: 'pic-empty' }, safeIcon(place?.group.icon || 'book', 20)));
+  return h('span', { class: 'pic thumb' }, h('span', { class: 'pic-empty' }, safeIcon(place?.sub.icon || place?.group.icon || 'book', 24)));
 }
 
 function pageRow(page, wiki, { showPlace = false, snippet } = {}) {
@@ -181,56 +192,58 @@ function homeView(el, wiki, ui) {
 
 /* ---------- A group ---------- */
 
-function groupView(el, wiki, groupId) {
+function groupView(el, wiki, ui, groupId) {
   const g = wiki.group(groupId);
-  if (!g) return notFound(el, 'This group');
+  if (!g) return notFound(el, ui, 'This group');
   document.title = `${g.name} · ${APP_TITLE}`;
   clear(el,
-    crumbs({ href: '#/wiki', label: 'Wiki' }),
+    topNav(ui, '', { href: '#/wiki', label: 'Wiki' }),
     h('div', { class: 'tab-head' }, h('h1', { text: g.name }), h('span', { class: 'muted', text: plural(wiki.countIn(g.id), 'page') })),
     h('div', { class: 'tiles' }, g.subgroups.map(s => {
-      const n = wiki.countIn(g.id, s.id);
+      const pages = wiki.pagesIn(g.id, s.id);
+      const n = pages.length;
       return h('a', { class: 'tile', href: `#/wiki/g/${g.id}/${s.id}` },
+        h('span', { class: 'tile-icon' }, safeIcon(s.icon || g.icon, 28)),
         h('span', { class: 'tile-text' },
           h('span', { class: 'tile-name', text: s.name }),
-          h('span', { class: 'tile-sub', text: `${wiki.templates[s.template]?.name || 'No'} template` })),
+          h('span', { class: 'tile-sub', text: n ? pages.map(pageName).join(' · ') : 'No pages yet' })),
         h('span', { class: `tile-count${n ? '' : ' zero'}`, 'aria-label': plural(n, 'page'), text: String(n) }));
     })));
 }
 
 /* ---------- A sub-group ---------- */
 
-function subView(el, wiki, groupId, subId) {
+function subView(el, wiki, ui, groupId, subId) {
   const g = wiki.group(groupId);
   const s = g?.subgroups.find(x => x.id === subId);
-  if (!s) return notFound(el, 'This sub-group');
+  if (!s) return notFound(el, ui, 'This sub-group');
   document.title = `${s.name} · ${g.name} · ${APP_TITLE}`;
   const pages = wiki.pagesIn(g.id, s.id);
   clear(el,
-    crumbs({ href: '#/wiki', label: 'Wiki' }, { href: `#/wiki/g/${g.id}`, label: g.name }),
+    topNav(ui, `g/${g.id}`, { href: '#/wiki', label: 'Wiki' }, { href: `#/wiki/g/${g.id}`, label: g.name }),
     h('div', { class: 'tab-head' }, h('h1', { text: s.name }),
       h('span', { class: 'muted', text: `${plural(pages.length, 'page')} · ${wiki.templates[s.template]?.name || 'No'} template` })),
     pages.length ? pageList(pages, wiki) : h('p', { class: 'muted', text: 'No pages here yet.' }));
 }
 
-function unsortedView(el, wiki) {
+function unsortedView(el, wiki, ui) {
   clear(el,
-    crumbs({ href: '#/wiki', label: 'Wiki' }),
+    topNav(ui, '', { href: '#/wiki', label: 'Wiki' }),
     h('div', { class: 'tab-head' }, h('h1', { text: 'Not sorted yet' })),
     wiki.unsorted.length ? pageList(wiki.unsorted, wiki) : h('p', { class: 'muted', text: 'Every page is in a group.' }));
 }
 
-function notFound(el, what) {
+function notFound(el, ui, what) {
   clear(el,
-    crumbs({ href: '#/wiki', label: 'Wiki' }),
+    topNav(ui, '', { href: '#/wiki', label: 'Wiki' }),
     h('div', { class: 'notice' }, h('p', { text: `${what} doesn't exist (anymore).` })));
 }
 
 /* ---------- A page ---------- */
 
-function pageView(el, wiki, id) {
+function pageView(el, wiki, ui, id) {
   const page = wiki.get(id);
-  if (!page) return missingPageView(el, wiki, id);
+  if (!page) return missingPageView(el, wiki, ui, id);
   const d = page.data;
   const name = pageName(page);
   const place = wiki.placeOf(page);
@@ -250,7 +263,7 @@ function pageView(el, wiki, id) {
 
   clear(el, h('article', { class: 'wiki-page', 'aria-labelledby': 'wiki-page-title' },
     h('header', { class: 'wiki-page-head' },
-      crumbs({ href: '#/wiki', label: 'Wiki' }, ...where),
+      topNav(ui, place ? `g/${place.group.id}/${place.sub.id}` : 'unsorted', { href: '#/wiki', label: 'Wiki' }, ...where),
       h('div', { class: 'wiki-title-row' }, h('h1', { id: 'wiki-page-title', text: name }), tags(page, wiki))),
     d.overview ? h('div', { class: 'wiki-overview text' }, renderText(d.overview, wiki)) : h('div', { class: 'wiki-overview' }),
     infobox(page, wiki, tpl, place),
@@ -298,13 +311,13 @@ function infobox(page, wiki, tpl, place) {
     ));
 }
 
-function missingPageView(el, wiki, id) {
+function missingPageView(el, wiki, ui, id) {
   const name = humanizeId(id);
   document.title = `${name} · ${APP_TITLE}`;
   const linkedFrom = wiki.linkedFrom(id);
   clear(el, h('article', { class: 'wiki-page missing' },
     h('header', { class: 'wiki-page-head' },
-      crumbs({ href: '#/wiki', label: 'Wiki' }),
+      topNav(ui, '', { href: '#/wiki', label: 'Wiki' }),
       h('div', { class: 'wiki-title-row' }, h('h1', { text: name }), h('span', { class: 'tag tag-missing', text: 'No page yet' }))),
     h('div', { class: 'wiki-main' },
       h('div', { class: 'notice' },

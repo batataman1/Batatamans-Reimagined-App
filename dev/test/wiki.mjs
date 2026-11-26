@@ -85,6 +85,10 @@ await A.locator('.tile', { hasText: 'Mobs' }).click();
 await A.locator('#view h1', { hasText: /^Mobs$/ }).waitFor();
 assert.equal(await hash(A), '#/wiki/g/mobs');
 assert.equal(await h1(A), 'Mobs');
+// Sub-group tiles: an icon each, and the names of the pages inside.
+assert.equal(await A.locator('.tile .tile-icon svg').count(), 4);
+assert.equal(await A.locator('.tile', { hasText: 'Neutral' }).locator('.tile-sub').textContent(), 'Brown Bear · Hippo · Ostrich');
+assert.equal(await A.locator('.tile', { hasText: 'Boss' }).locator('.tile-sub').textContent(), 'No pages yet');
 await A.screenshot({ path: SHOTS + 'w4-group.png' });
 await A.locator('.tile', { hasText: 'Neutral' }).click();
 await A.locator('#view h1', { hasText: /^Neutral$/ }).waitFor();
@@ -111,6 +115,23 @@ assert.ok(linkedFrom.includes('Ostrich') && linkedFrom.includes('Baobab Tree'), 
 assert.equal(await A.evaluate(() => window.scrollY), 0);
 await A.goBack();
 await A.waitForFunction(() => location.hash === '#/wiki/p/ostrich' && document.querySelector('#view h1')?.textContent === 'Ostrich');
+
+// The on-screen Back button: back to where you came from (Ostrich -> Neutral -> Mobs -> Wiki).
+await A.locator('.infobox .wlink', { hasText: 'Baobab Fruit' }).first().click();
+await A.locator('#view h1', { hasText: /^Baobab Fruit$/ }).waitFor();
+for (const [where, title] of [['#/wiki/p/ostrich', 'Ostrich'], ['#/wiki/g/mobs/neutral', 'Neutral'], ['#/wiki/g/mobs', 'Mobs']]) {
+  await A.getByRole('button', { name: 'Back' }).click();
+  await A.waitForFunction(([h, t]) => location.hash === h && document.querySelector('#view h1')?.textContent === t, [where, title]);
+}
+await A.getByRole('button', { name: 'Back' }).click();
+await A.waitForFunction(() => location.hash === '#/wiki' && !!document.querySelector('.search-box'));
+// Opened directly (no history in the app): Back goes one level up instead of leaving the app.
+await A.goto(BASE + '#/wiki/p/palm-tree');
+await A.locator('#view h1', { hasText: /^Palm Tree$/ }).waitFor();
+await A.getByRole('button', { name: 'Back' }).click();
+await A.waitForFunction(() => location.hash === '#/wiki/g/world/trees' && document.querySelector('#view h1')?.textContent === 'Trees');
+await A.getByRole('button', { name: 'Back' }).click();
+await A.waitForFunction(() => location.hash === '#/wiki/g/world' && document.querySelector('#view h1')?.textContent === 'World');
 
 // Variants list and the vanilla biome tag
 await A.goto(BASE + '#/wiki/p/hollow-logs');
@@ -202,6 +223,7 @@ await B.screenshot({ path: SHOTS + 'p4-ostrich.png', fullPage: true });
 await B.goto(BASE + '#/wiki/p/baobab-wood-set');
 await B.locator('h1', { hasText: 'Baobab Wood Set' }).waitFor();
 await B.screenshot({ path: SHOTS + 'p5-wood-set.png', fullPage: true });
+assert.equal(await B.locator('.back-btn').isVisible(), false);
 const overflow = await B.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1);
 assert.equal(overflow, false, 'page is wider than the phone screen');
 

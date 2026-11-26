@@ -56,24 +56,26 @@ export const TEMPLATES = {
     f('obtainedVia', 'Obtained via')] },
 };
 
-const s = (id, name, template) => ({ id, name, template });
+const s = (id, name, template, icon) => ({ id, name, template, icon });
 
+// icon: a pixel icon from config/icons.js
 export const GROUPS = [
   { id: 'mobs', name: 'Mobs', icon: 'mob', subgroups: [
-    s('passive', 'Passive', 'mob'), s('neutral', 'Neutral', 'mob'),
-    s('hostile', 'Hostile', 'mob'), s('boss', 'Boss', 'mob')] },
+    s('passive', 'Passive', 'mob', 'passive'), s('neutral', 'Neutral', 'mob', 'neutral'),
+    s('hostile', 'Hostile', 'mob', 'hostile'), s('boss', 'Boss', 'mob', 'boss')] },
   { id: 'items', name: 'Items', icon: 'item', subgroups: [
-    s('tools', 'Tools', 'tool'), s('weapons', 'Weapons', 'weapon'), s('armor', 'Armor', 'armor'),
-    s('utility', 'Utility & Equipment', 'utility'), s('food', 'Food & Ingredients', 'food'),
-    s('potions', 'Potions', 'potion'), s('misc', 'Materials & Misc', 'item')] },
+    s('tools', 'Tools', 'tool', 'pickaxe'), s('weapons', 'Weapons', 'weapon', 'item'), s('armor', 'Armor', 'armor', 'armor'),
+    s('utility', 'Utility & Equipment', 'utility', 'compass'), s('food', 'Food & Ingredients', 'food', 'food'),
+    s('potions', 'Potions', 'potion', 'effect'), s('misc', 'Materials & Misc', 'item', 'gem')] },
   { id: 'blocks', name: 'Blocks', icon: 'block', subgroups: [
-    s('natural', 'Natural', 'block'), s('building', 'Building', 'block'), s('plants', 'Plants & Crops', 'block'),
-    s('functional', 'Functional', 'block'), s('decorative', 'Decorative', 'block')] },
-  { id: 'world', name: 'World', icon: 'world', subgroups: [
-    s('biomes', 'Biomes', 'biome'), s('trees', 'Trees', 'tree'),
-    s('structures', 'Structures', 'structure'), s('dimensions', 'Dimensions', 'dimension')] },
+    s('natural', 'Natural', 'block', 'grass'), s('building', 'Building', 'block', 'bricks'),
+    s('plants', 'Plants & Crops', 'block', 'sapling'), s('functional', 'Functional', 'block', 'gear'),
+    s('decorative', 'Decorative', 'block', 'decor')] },
+  { id: 'world', name: 'World', icon: 'globe', subgroups: [
+    s('biomes', 'Biomes', 'biome', 'landscape'), s('trees', 'Trees', 'tree', 'tree'),
+    s('structures', 'Structures', 'structure', 'house'), s('dimensions', 'Dimensions', 'dimension', 'portal')] },
   { id: 'effects', name: 'Effects & Enchantments', icon: 'effect', subgroups: [
-    s('status-effects', 'Status effects', 'effect'), s('enchantments', 'Enchantments', 'enchantment')] },
+    s('status-effects', 'Status effects', 'effect', 'sparkle'), s('enchantments', 'Enchantments', 'enchantment', 'wand')] },
 ];
 
 /** Page statuses besides the normal "in the mod". */
