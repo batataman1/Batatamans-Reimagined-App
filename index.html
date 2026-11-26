@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Batataman's Reimagined</title>
+  <meta name="description" content="Wiki, tasks, ideas and drawings for the Batataman's Reimagined Minecraft mod.">
+  <meta name="theme-color" content="#0B1A2E">
+  <meta name="color-scheme" content="dark light">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/favicon-32.png" sizes="32x32" type="image/png">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <link rel="stylesheet" href="css/app.css">
+  <script>
+    // Apply the saved theme before anything draws, so there's no flash of the wrong colors.
+    try {
+      var saved = JSON.parse(localStorage.getItem('brr.themeVars') || 'null');
+      if (saved) {
+        for (var k in saved.vars) document.documentElement.style.setProperty(k, saved.vars[k]);
+        document.documentElement.dataset.mode = saved.mode;
+        document.querySelector('meta[name="theme-color"]').setAttribute('content', saved.vars['--bg']);
+      }
+    } catch (e) {}
+  </script>
+</head>
+<body>
+  <div id="app"></div>
+  <noscript>This app needs JavaScript turned on.</noscript>
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
