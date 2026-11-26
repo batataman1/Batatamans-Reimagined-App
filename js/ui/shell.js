@@ -36,9 +36,8 @@ export function mountShell(root) {
   onThemeChange(renderThemeBtn);
 
   const header = h('header', { class: 'topbar' },
-    h('div', { class: 'brand' }, potato(32),
-      h('span', { class: 'brand-name', text: APP_NAME }),
-      h('span', { class: 'brand-short', text: "Batataman's", 'aria-hidden': 'true' })),
+    h('div', { class: 'brand', title: APP_NAME }, potato(32),
+      h('span', { class: 'brand-name' }, h('span', { text: "Batataman's" }), ' ', h('span', { class: 'brand-sub', text: 'Reimagined' }))),
     tablist,
     h('div', { class: 'actions' },
       h('button', { type: 'button', class: 'sync-btn', title: 'Pull: get the latest from GitHub', onclick: doPull },

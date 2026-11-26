@@ -5,6 +5,7 @@ import { THEMES, DEFAULT_THEME, DEFAULT_LIGHT_THEME } from '../config/themes.js'
 const KEY = 'brr.theme';
 const VARS_KEY = 'brr.themeVars'; // read by the tiny script in index.html to avoid a flash on load
 const listeners = new Set();
+const DEFAULT_STATE = { id: DEFAULT_THEME, lastDark: DEFAULT_THEME, lastLight: DEFAULT_LIGHT_THEME, custom: null };
 
 const MODE_COLORS = {
   dark:  { text: '#E6EEF2', danger: '#F07178', warn: '#E8B44C', ok: '#5FD08A' },
@@ -14,9 +15,9 @@ const MODE_COLORS = {
 export function getThemeState() {
   try {
     const s = JSON.parse(localStorage.getItem(KEY) || 'null');
-    if (s && typeof s === 'object') return { id: DEFAULT_THEME, lastDark: DEFAULT_THEME, custom: null, ...s };
+    if (s && typeof s === 'object') return { ...DEFAULT_STATE, ...s };
   } catch { /* fall through */ }
-  return { id: DEFAULT_THEME, lastDark: DEFAULT_THEME, custom: null };
+  return { ...DEFAULT_STATE };
 }
 
 function save(state) {
@@ -67,15 +68,24 @@ export function setTheme(id) {
   const t = themeById(id);
   const next = { ...state, id: t.id, custom: state.custom ? { ...state.custom, on: false } : null };
   if (modeOf(t.bg) === 'dark') next.lastDark = t.id;
+  else next.lastLight = t.id;
   save(next);
   applyTheme(next);
 }
 
-/** One tap: switch between your dark theme and the light theme. */
+/** One tap: switch between your last-used dark theme and your last-used light theme. */
 export function toggleMode() {
   const state = getThemeState();
   const current = modeOf(activeColors(state).bg);
-  setTheme(current === 'dark' ? DEFAULT_LIGHT_THEME : (state.lastDark || DEFAULT_THEME));
+  setTheme(current === 'dark' ? (state.lastLight || DEFAULT_LIGHT_THEME) : (state.lastDark || DEFAULT_THEME));
+}
+
+/** Themes split into { dark: [...], light: [...] }. */
+export function themesByMode() {
+  return {
+    dark: THEMES.filter(t => modeOf(t.bg) === 'dark'),
+    light: THEMES.filter(t => modeOf(t.bg) === 'light'),
+  };
 }
 
 export function setCustomColors({ bg, panel, accent }) {

@@ -4,9 +4,8 @@ import { h, clear, plural, timeAgo } from '../core/util.js';
 import { store } from '../core/store.js';
 import { loadConnection, saveConnection, forgetToken } from '../core/sync.js';
 import { testConnection } from '../core/github.js';
-import { THEMES } from '../config/themes.js';
 import { APP_VERSION, DEFAULT_OWNER, DEFAULT_DATA_REPO } from '../config/app.js';
-import { getThemeState, setTheme, setCustomColors, turnOffCustomColors, activeColors, onThemeChange } from './theme.js';
+import { getThemeState, setTheme, setCustomColors, turnOffCustomColors, activeColors, onThemeChange, themesByMode, themeById } from './theme.js';
 import { openModal, confirmDialog, toast } from './dialogs.js';
 import { icon } from './icons.js';
 import { openImport, copyTasksForClaude } from './claudeui.js';
@@ -14,7 +13,7 @@ import { canPromptInstall, isInstalled, promptInstall, onInstallChange } from '.
 
 let openSheet = null;
 
-export function openSettings(section) {
+export function openSettings(section, { openConnection = false } = {}) {
   if (openSheet) openSheet.close();
   const body = h('div', { class: 'settings' });
   const m = openModal({ title: 'Settings', body, className: 'sheet' });
@@ -25,11 +24,18 @@ export function openSettings(section) {
   body.append(
     section_('claude', 'Claude', claudeSection(m)),
     section_('theme', 'Theme', themeSection(cleanups)),
-    section_('sync', 'Sync with GitHub', syncSection(m)),
+    section_('sync', 'Sync with GitHub', syncSection()),
     section_('device', 'This device', deviceSection(cleanups)),
     section_('about', 'About', h('p', { class: 'muted', text: `Batataman's Reimagined app, version ${APP_VERSION}.` })),
+    dangerZone(m),
   );
-  if (section) requestAnimationFrame(() => body.querySelector(`#settings-${section}`)?.scrollIntoView({ block: 'start' }));
+  if (section) {
+    requestAnimationFrame(() => {
+      const target = body.querySelector(`#settings-${section}`);
+      if (openConnection) target?.openConnection?.();
+      target?.scrollIntoView({ block: 'start' });
+    });
+  }
   return m;
 }
 
@@ -55,24 +61,37 @@ function themeSection(cleanups) {
   const render = () => {
     const state = getThemeState();
     const active = state.custom?.on ? 'custom' : state.id;
-    const group = h('div', { class: 'swatches', role: 'radiogroup', 'aria-label': 'Theme' },
-      THEMES.map(t => swatch(t, active === t.id, () => setTheme(t.id))));
-    clear(wrap, group, customColors(state));
+    const groups = themesByMode();
+    clear(wrap,
+      themeGroup('Dark', groups.dark, active, state.lastDark),
+      themeGroup('Light', groups.light, active, state.lastLight),
+      h('p', { class: 'muted small', text: 'The sun and moon button switches between the dark and light theme you picked last.' }),
+      customColors(state));
   };
   render();
   cleanups.push(onThemeChange(render));
   return wrap;
 }
 
-function swatch(t, selected, onPick) {
+function themeGroup(title, themes, active, remembered) {
+  const current = themes.find(t => t.id === active) || themeById(remembered);
+  const label = h('span', { class: 'muted', text: current?.name || '' });
+  const group = h('div', { class: 'swatches', role: 'radiogroup', 'aria-label': `${title} themes` },
+    themes.map(t => swatch(t, active === t.id, label)));
+  return h('div', { class: 'theme-group' },
+    h('div', { class: 'theme-group-head' }, h('h4', { text: title }), label),
+    group);
+}
+
+function swatch(t, selected, label) {
   return h('button', {
     type: 'button', class: 'swatch', role: 'radio', 'aria-checked': selected ? 'true' : 'false',
-    onclick: onPick,
+    'aria-label': t.name, title: t.name,
+    onclick: () => setTheme(t.id),
+    onpointerenter: () => { label.textContent = t.name; },
     style: { '--sw-bg': t.bg, '--sw-panel': t.panel, '--sw-accent': t.accent },
   },
-    h('span', { class: 'swatch-preview', 'aria-hidden': 'true' },
-      h('span', { class: 'swatch-panel' }, h('span', { class: 'swatch-accent' }))),
-    h('span', { class: 'swatch-name', text: t.name }));
+    h('span', { class: 'swatch-panel', 'aria-hidden': 'true' }, h('span', { class: 'swatch-accent' })));
 }
 
 function customColors(state) {
@@ -95,17 +114,24 @@ function customColors(state) {
 
 /* ---------- Sync ---------- */
 
-function syncSection(m) {
+function syncSection() {
   const wrap = h('div');
   (async () => {
     const conn = await store.getMeta('connection');
-    wrap.append(await syncStatus(conn), connectForm({ onSaved: () => { m.close(); openSettings('sync'); } }));
+    wrap.append(await syncStatus(conn));
   })();
   return wrap;
 }
 
 async function syncStatus(conn) {
-  if (!conn?.token) return h('p', { class: 'muted', text: 'This device is not connected yet. Paste your token below to sync with your other devices.' });
+  if (!conn?.token) {
+    return h('div',
+      h('p', { class: 'muted', text: 'This device is not connected to GitHub yet.' }),
+      h('div', { class: 'button-row' }, h('button', {
+        type: 'button', class: 'btn btn-small',
+        onclick: () => openSettings('danger', { openConnection: true }),
+      }, 'Connect this device')));
+  }
   const [pending, lastPull, lastPush] = await Promise.all([
     store.pendingCount(), store.getMeta('lastPull'), store.getMeta('lastPush'),
   ]);
@@ -133,21 +159,56 @@ async function syncStatus(conn) {
           doPull();
         },
       }, 'Download everything again'),
-      h('button', {
-        type: 'button', class: 'btn btn-small btn-quiet',
-        onclick: async () => {
-          const ok = await confirmDialog({
-            title: 'Remove the token from this device?',
-            body: h('p', { text: 'Your data stays on this device and on GitHub. To sync again, paste a token. If the token leaked, also delete it on GitHub.' }),
-            confirm: 'Remove token', danger: true,
-          });
-          if (!ok) return;
-          await forgetToken();
-          toast('Token removed from this device.');
-          openSettings('sync');
-        },
-      }, 'Remove token from this device'),
     ));
+}
+
+/* ---------- Danger zone ---------- */
+
+function dangerZone(m) {
+  const formHost = h('div', { class: 'danger-form', hidden: true });
+  const changeBtn = h('button', {
+    type: 'button', class: 'btn btn-small btn-danger-outline', 'aria-expanded': 'false',
+    onclick: () => {
+      const open = formHost.hidden;
+      formHost.hidden = !open;
+      changeBtn.setAttribute('aria-expanded', String(open));
+      changeBtn.textContent = open ? 'Cancel' : 'Change connection';
+      if (open && !formHost.firstChild) {
+        formHost.append(
+          h('p', { class: 'status-warn', text: 'A wrong username, repo or token stops this device from syncing until you fix it. Your data on this device and on GitHub is not affected.' }),
+          connectForm({ onSaved: () => { m.close(); openSettings('sync'); } }));
+      }
+      if (open) formHost.querySelector('input[name=token]')?.focus();
+    },
+  }, 'Change connection');
+
+  const removeBtn = h('button', {
+    type: 'button', class: 'btn btn-small btn-danger-outline',
+    onclick: async () => {
+      const ok = await confirmDialog({
+        title: 'Remove the token from this device?',
+        body: h('p', { text: 'Your data stays on this device and on GitHub. To sync again, paste a token. If the token leaked, also delete it on GitHub.' }),
+        confirm: 'Remove token', danger: true,
+      });
+      if (!ok) return;
+      await forgetToken();
+      toast('Token removed from this device.');
+      openSettings('sync');
+    },
+  }, 'Remove token');
+
+  const row = (title, text, button) => h('div', { class: 'danger-row' },
+    h('div', h('strong', { text: title }), h('p', { class: 'muted small', text })),
+    button);
+
+  const zone = h('section', { class: 'danger-zone', id: 'settings-danger', 'aria-labelledby': 'settings-danger-h' },
+    h('h3', { id: 'settings-danger-h', text: 'Danger zone' }),
+    h('div', { class: 'danger-box' },
+      row('GitHub connection', 'The username, data repo and access token this device uses to sync.', changeBtn),
+      formHost,
+      row('Remove token from this device', 'Stops syncing on this device until you paste a token again.', removeBtn)));
+  zone.openConnection = () => { if (formHost.hidden) changeBtn.click(); };
+  return zone;
 }
 
 /** The Connect to GitHub form. Also shown on the welcome card. */
