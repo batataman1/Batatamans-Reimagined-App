@@ -128,6 +128,8 @@ export const ideasTab = {
         } else {
           depth = history.state?.ideasDepth || 0;
         }
+        // The drawing workspace switches between its tabs in place (no redraw of the screen).
+        if (leaveView?.reroute?.(p || '')) { current = p || ''; return; }
         current = p || '';
         show();
       },

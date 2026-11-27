@@ -196,7 +196,7 @@ const near = (a, b, d = 2) => Math.abs(a - b) <= d;
 
 
 /* ---------- Drawing helpers ---------- */
-const pic = page => page.locator('.dr-pic');
+const pic = page => page.locator('.dr-pane.active .dr-pic');
 /** Screen point of the middle of a square (n = squares across). */
 async function cellPoint(page, x, y, n = 16) {
   const b = await pic(page).boundingBox();
@@ -217,7 +217,7 @@ async function dragCells(page, cells, n = 16) {
 }
 /** The colour of a square: "#rrggbb/alpha" ("-" when see-through). */
 const cellColor = (page, x, y, n = 16) => page.evaluate(([x, y, n]) => {
-  const c = document.querySelector('.dr-pic');
+  const c = document.querySelector('.dr-pane.active .dr-pic');
   const k = c.width / n;
   const d = c.getContext('2d').getImageData(Math.floor(x * k + k / 2), Math.floor(y * k + k / 2), 1, 1).data;
   return d[3] ? `#${[d[0], d[1], d[2]].map(v => v.toString(16).padStart(2, '0')).join('')}/${d[3]}` : '-';
@@ -233,6 +233,28 @@ async function waitDrawingSaved(page) {
   await page.waitForFunction(() => /Saved on this device/.test(document.querySelector('.dr-status')?.textContent || ''), null, { timeout: 8000 });
 }
 const drawingNamed = async (page, name) => (await list(page, 'drawings')).find(d => d.name === name) || null;
+const tabNames = page => page.locator('.dr-tab-name').allTextContents();
+const activeTab = page => page.locator('.dr-tab.active .dr-tab-name').textContent();
+/** Press on a tab and drag it with the mouse to a point. */
+async function dragTab(page, name, to) {
+  const b = await page.locator('.dr-tab', { hasText: name }).boundingBox();
+  await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(b.x + b.width / 2 + 12, b.y + b.height / 2 + 4, { steps: 3 });
+  await page.mouse.move(to.x, to.y, { steps: 14 });
+  await page.mouse.up();
+}
+// A 4 x 4 reference picture: orange, green / blue, see-through.
+const REF = SHOTS + 'ref-colours.png';
+spawnSync('python3', ['-c', `
+from PIL import Image
+im = Image.new('RGBA', (4, 4), (0, 0, 0, 0))
+for x in range(4):
+    for y in range(4):
+        if y < 2: im.putpixel((x, y), (255, 136, 0, 255) if x < 2 else (0, 170, 85, 255))
+        elif x < 2: im.putpixel((x, y), (51, 102, 255, 255))
+im.save(${JSON.stringify(REF)})
+`]);
 
 /* ---------------- Device A: desktop ---------------- */
 const A = await device('A', { viewport: { width: 1280, height: 860 } });
@@ -538,6 +560,147 @@ await A.locator('.dr-top button[aria-label="Back"]').click();
 await A.locator('.dg-card', { hasText: 'Oasis sketch' }).waitFor();
 assert.match(await A.locator('.dg-card', { hasText: 'Oasis sketch' }).textContent(), /Free drawing · Not sorted/);
 
+/* ---- Tabs: drawings stay open; switching tabs keeps Undo ---- */
+await A.locator('.dg-open-tabs').click();
+await A.locator('.dr-tab').nth(1).waitFor();
+assert.deepEqual(await tabNames(A), ['Termite texture', 'Oasis sketch']);
+assert.equal(await activeTab(A), 'Oasis sketch');
+await A.locator('.dr-tab', { hasText: 'Termite texture' }).click();
+await A.waitForFunction(id => location.hash === `#/ideas/draw/${id}`, drawingId);
+assert.equal(await activeTab(A), 'Termite texture');
+await A.locator('.dr-pane.active .dr-pic').waitFor();
+await clickCell(A, 7, 7);
+const drawn = await cellColor(A, 7, 7);
+assert.notEqual(drawn, '#b3312c/255');
+await A.locator('.dr-tab', { hasText: 'Oasis sketch' }).click();
+await A.waitForFunction(() => document.querySelector('.dr-tab.active .dr-tab-name')?.textContent === 'Oasis sketch');
+await A.locator('.dr-tab', { hasText: 'Termite texture' }).click();
+await A.waitForFunction(() => document.querySelector('.dr-tab.active .dr-tab-name')?.textContent === 'Termite texture');
+await A.locator('.dr-top-tools [aria-label="Undo"]').click();
+assert.equal(await cellColor(A, 7, 7), '#b3312c/255', 'Undo still works after switching tabs');
+await A.locator('.dr-top-tools [aria-label="Redo"]').click();
+assert.equal(await cellColor(A, 7, 7), drawn);
+
+/* ---- Ctrl+Z with a Hebrew keyboard, and right after using a slider ---- */
+await A.locator('.dr-opts input[name=opacity]').focus();
+await A.evaluate(() => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ז', code: 'KeyZ', ctrlKey: true, bubbles: true, cancelable: true })));
+assert.equal(await cellColor(A, 7, 7), '#b3312c/255');
+await A.evaluate(() => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ט', code: 'KeyY', ctrlKey: true, bubbles: true, cancelable: true })));
+assert.equal(await cellColor(A, 7, 7), drawn);
+await A.evaluate(() => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ה', code: 'KeyE', bubbles: true, cancelable: true })));
+assert.equal(await A.locator('.dr-tool[aria-pressed="true"]').getAttribute('data-tool'), 'eraser', 'tool keys work in Hebrew too');
+
+/* ---- The tap eraser: a colour area, then a colour everywhere ---- */
+await optSeg(A, 'Eraser', 'true');
+assert.equal(await A.locator('.dr-opts input[name=size]').count(), 0);
+await clickCell(A, 0, 0);                                         // the black line along the top
+assert.deepEqual(await Promise.all([[0, 0], [7, 0], [8, 0], [1, 2], [8, 8]].map(([x, y]) => cellColor(A, x, y))),
+  ['-', '-', '#b3312c/255', '#000000/255', '#000000/255']);
+await optSeg(A, 'Erase', 'true');
+await clickCell(A, 1, 2);                                         // every black square
+assert.deepEqual(await Promise.all([[1, 2], [14, 2], [8, 8], [3, 13], [2, 3]].map(([x, y]) => cellColor(A, x, y))),
+  ['-', '-', '-', '-', '#f5d547/255']);
+await A.keyboard.press('Control+z');
+await A.keyboard.press('Control+z');
+assert.equal(await cellColor(A, 0, 0), '#000000/255');
+assert.equal(await cellColor(A, 8, 8), '#000000/255');
+await optSeg(A, 'Erase', 'false');
+await optSeg(A, 'Eraser', 'false');
+await tool(A, 'pen');
+
+/* ---- A reference picture in split screen: pick its colours, draw with them on the left ---- */
+const [chooser] = await Promise.all([A.waitForEvent('filechooser'), drMenu(A, 'Add a reference picture')]);
+await chooser.setFiles(REF);
+await A.locator('.dr-panes.split').waitFor();
+await expectToast(A, /Picture added/);
+assert.equal(await A.locator('.dr-pane').count(), 2);
+assert.deepEqual(await tabNames(A), ['Termite texture', 'ref colours', 'Oasis sketch']);
+assert.equal(await activeTab(A), 'Termite texture', 'you keep drawing where you were');
+assert.equal(await A.locator('.dr-panes > .dr-pane').first().getAttribute('data-id'), drawingId);
+const ref = await drawingNamed(A, 'ref colours');
+assert.equal(ref.kind, 'reference');
+assert.equal(ref.file, `drawings/${ref.id}.png`, 'a small picture stays a PNG (exact colours)');
+const refPic = A.locator('.dr-pane:not(.active) .dr-pic');
+await A.waitForFunction(() => { const c = document.querySelector('.dr-pane:not(.active) .dr-pic'); return c && c.getContext('2d').getImageData(0, 0, 1, 1).data[3] === 255; });
+let rb = await refPic.boundingBox();
+await A.mouse.click(rb.x + rb.width * 0.2, rb.y + rb.height * 0.2);
+assert.equal(await A.locator('.dr-side .cp-code').inputValue(), '#ff8800');
+assert.equal(await activeTab(A), 'Termite texture');
+await clickCell(A, 6, 6);
+assert.equal(await cellColor(A, 6, 6), '#ff8800/255');
+// The eyedropper tool picks from the other half too, then goes back to the pen
+await tool(A, 'picker');
+await A.mouse.click(rb.x + rb.width * 0.8, rb.y + rb.height * 0.2);
+assert.equal(await A.locator('.dr-side .cp-code').inputValue(), '#00aa55');
+assert.equal(await A.locator('.dr-tool[aria-pressed="true"]').getAttribute('data-tool'), 'pen');
+// See-through parts say so
+await A.mouse.click(rb.x + rb.width * 0.8, rb.y + rb.height * 0.8);
+await expectToast(A, /see-through/);
+// Dragging on the reference moves it (no colour picked)
+const v0 = await A.locator('.dr-pane:not(.active) .dr-world').evaluate(e => e.style.transform);
+await A.mouse.move(rb.x + rb.width * 0.5, rb.y + rb.height * 0.5);
+await A.mouse.down();
+await A.mouse.move(rb.x + rb.width * 0.5 + 60, rb.y + rb.height * 0.5 + 30, { steps: 6 });
+await A.mouse.up();
+assert.notEqual(await A.locator('.dr-pane:not(.active) .dr-world').evaluate(e => e.style.transform), v0);
+assert.equal(await A.locator('.dr-side .cp-code').inputValue(), '#00aa55');
+await A.screenshot({ path: SHOTS + 'd10-split.png' });
+
+/* ---- The border between the halves, its handle: swap, close ---- */
+const w0 = (await A.locator('.dr-panes > .dr-pane').first().boundingBox()).width;
+const dv = await A.locator('.dr-divider').boundingBox();
+await A.mouse.move(dv.x + dv.width / 2, dv.y + 30);
+await A.mouse.down();
+await A.mouse.move(dv.x + dv.width / 2 + 150, dv.y + 30, { steps: 8 });
+await A.mouse.up();
+const w1 = (await A.locator('.dr-panes > .dr-pane').first().boundingBox()).width;
+assert.ok(w1 > w0 + 100, `the left half got wider (${w0} → ${w1})`);
+await A.locator('.dr-divider-handle').click();
+await popup(A).locator('.popup-item', { hasText: 'Swap sides' }).click();
+assert.equal(await A.locator('.dr-panes > .dr-pane').first().getAttribute('data-id'), ref.id);
+assert.equal(await activeTab(A), 'Termite texture');
+await A.locator('.dr-divider-handle').click();
+await popup(A).locator('.popup-item', { hasText: 'Close split screen' }).click();
+assert.equal(await A.locator('.dr-pane').count(), 1);
+assert.equal(await A.locator('.dr-pane').getAttribute('data-id'), drawingId);
+
+/* ---- Drag a tab into the screen: split screen; along the row: a new order ---- */
+let pr = await A.locator('.dr-panes').boundingBox();
+await dragTab(A, 'Oasis sketch', { x: pr.x + pr.width * 0.75, y: pr.y + pr.height * 0.5 });
+await A.locator('.dr-panes.split').waitFor();
+assert.deepEqual(await A.locator('.dr-panes > .dr-pane').evaluateAll(els => els.map(e => e.dataset.id)), [drawingId, (await drawingNamed(A, 'Oasis sketch')).id]);
+assert.equal(await activeTab(A), 'Termite texture');
+assert.deepEqual(await tabNames(A), ['ref colours', 'Termite texture', 'Oasis sketch'], 'the two split tabs sit together (swapping sides swapped their tabs too)');
+// Tapping the other half's tab makes it the one the tools work on
+await A.locator('.dr-tab', { hasText: 'Oasis sketch' }).click();
+await A.waitForFunction(() => document.querySelector('.dr-tab.active .dr-tab-name')?.textContent === 'Oasis sketch');
+assert.equal(await A.locator('.dr-pane.active').getAttribute('data-id'), (await drawingNamed(A, 'Oasis sketch')).id);
+assert.equal(await A.locator('.dr-pane').count(), 2);
+const last = await A.locator('.dr-tab').last().boundingBox();
+await dragTab(A, 'ref colours', { x: last.x + last.width - 6, y: last.y + last.height / 2 });
+assert.deepEqual(await tabNames(A), ['Termite texture', 'Oasis sketch', 'ref colours']);
+// Picking a tab outside the split shows it alone; picking a split tab brings the split back
+await A.locator('.dr-tab', { hasText: 'ref colours' }).click();
+await A.waitForFunction(() => document.querySelectorAll('.dr-pane').length === 1);
+await A.locator('.dr-tab', { hasText: 'Termite texture' }).click();
+await A.waitForFunction(() => document.querySelectorAll('.dr-pane').length === 2);
+await A.screenshot({ path: SHOTS + 'd11-split-tabs.png' });
+// × closes a tab
+await A.locator('.dr-tab', { hasText: 'ref colours' }).locator('.dr-tab-close').click();
+await A.waitForFunction(() => document.querySelectorAll('.dr-tab').length === 2);
+assert.deepEqual(await tabNames(A), ['Termite texture', 'Oasis sketch']);
+// Still open after reloading the app (split screen too)
+await waitDrawingSaved(A).catch(() => {});
+await A.reload();
+await A.locator('.dr-tab').nth(1).waitFor();
+assert.deepEqual(await tabNames(A), ['Termite texture', 'Oasis sketch']);
+await A.locator('.dr-panes.split').waitFor();
+assert.equal(await cellColor(A, 6, 6), '#ff8800/255', 'the drawing was saved');
+await A.locator('.dr-top button[aria-label="Back"]').click();
+await A.locator('.dg-card').first().waitFor();
+assert.match(await A.locator('.dg-open-tabs').textContent(), /Open drawings \(2\)/);
+assert.match(await A.locator('.dg-card', { hasText: 'ref colours' }).textContent(), /Reference picture 4 × 4/);
+
 /* ---- Check your changes, Push ---- */
 await clearToasts(A);
 await A.locator('.sync-btn', { hasText: 'Push' }).click();
@@ -546,6 +709,7 @@ await rv.waitFor();
 const rvText = await rv.locator('.rv-list').textContent();
 assert.match(rvText, /Termite texture.*New.*Drawing/);
 assert.match(rvText, /Termite colours.*New.*Colour palette/);
+assert.match(rvText, /ref colours.*New.*Reference picture/);
 const drItem = rv.locator('.rv-item', { hasText: 'Termite texture' });
 await drItem.getByRole('button', { name: 'See changes' }).click();
 await drItem.locator('.rv-pics-drawing img').waitFor();
@@ -602,7 +766,26 @@ assert.ok(phoneItems.includes('Fit on screen') && phoneItems.includes('Show the 
 await popup(B).locator('.popup-item', { hasText: 'Fit on screen' }).tap();
 await B.screenshot({ path: SHOTS + 'd9-phone-editor.png' });
 await cdp.detach();
-await waitDrawingSaved(B);
+// A second tab, then long-press a tab and drag it into the screen: split screen (top and bottom)
+await B.locator('.dr-newtab').tap();
+await popup(B).locator('.popup-item', { hasText: 'Open a drawing' }).tap();
+await popup(B).locator('.popup-item', { hasText: 'Oasis sketch' }).tap();
+await B.waitForFunction(() => document.querySelectorAll('.dr-tab').length === 2 && document.querySelector('.dr-tab.active .dr-tab-name')?.textContent === 'Oasis sketch');
+const cdp2 = await B.context().newCDPSession(B);
+const touch2 = (type, points) => cdp2.send('Input.dispatchTouchEvent', { type, touchPoints: points.map((p, i) => ({ x: p.x, y: p.y, id: i + 1 })) });
+const tb = await B.locator('.dr-tab', { hasText: 'Termite texture' }).boundingBox();
+const ppr = await B.locator('.dr-panes').boundingBox();
+const t0 = { x: tb.x + tb.width / 2, y: tb.y + tb.height / 2 };
+await touch2('touchStart', [t0]);
+await B.waitForTimeout(550);                                   // long-press picks the tab up
+for (let i = 1; i <= 12; i++) { await touch2('touchMove', [{ x: t0.x, y: t0.y + (ppr.y + ppr.height * 0.8 - t0.y) * i / 12 }]); await B.waitForTimeout(16); }
+await touch2('touchEnd', []);
+await B.locator('.dr-panes.split.dir-col').waitFor();
+assert.deepEqual(await B.locator('.dr-panes > .dr-pane').evaluateAll(els => els.map(e => e.dataset.id)), [(await drawingNamed(B, 'Oasis sketch')).id, drawingId]);
+assert.equal(await overflows(B), false);
+await B.screenshot({ path: SHOTS + 'd12-phone-split.png' });
+await cdp2.detach();
+await waitDrawingSaved(B).catch(() => {});
 await B.locator('.dr-top button[aria-label="Back"]').tap();
 await B.locator('.dg-card').first().waitFor();
 await push(B);
@@ -614,7 +797,7 @@ await A.locator('.dg-card').nth(1).waitFor();
 await A.locator('.dg-card', { hasText: 'Termite (new colours)' }).locator('.dg-more').click();
 await popup(A).locator('.popup-item', { hasText: 'Delete' }).click();
 await dlg(A).getByRole('button', { name: 'Delete drawing' }).click();
-await A.waitForFunction(() => document.querySelectorAll('.dg-card').length === 2);
+await A.waitForFunction(() => document.querySelectorAll('.dg-card').length === 3);
 assert.equal(await drawingNamed(A, 'Termite (new colours)'), null);
 assert.equal(await A.evaluate(async id => !!(await (await import('./js/core/store.js')).store.getFile(`drawings/${id}.png`)), copy.id), false);
 

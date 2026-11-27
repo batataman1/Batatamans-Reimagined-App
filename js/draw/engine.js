@@ -579,6 +579,8 @@ export function createEngine({ width, height, scale }) {
     },
     canUndo: () => undos.length > 0,
     canRedo: () => redos.length > 0,
+    /** Forget Undo/Redo (the picture was replaced, e.g. by a newer one from another device). */
+    resetHistory() { undos = []; redos = []; bytes = 0; },
 
     async load(blob) {
       if (!blob) return;

@@ -52,7 +52,7 @@ async function loadEntries() {
 }
 
 const kindText = e => {
-  if (e.main.row.collection === 'drawings') return 'Drawing';
+  if (e.main.row.collection === 'drawings') return e.main.row.data?.kind === 'reference' ? 'Reference picture' : 'Drawing';
   const what = e.main.kind === 'file' ? (e.main.row.path?.startsWith('drawings/') ? 'Drawing picture' : 'Picture')
     : e.main.row.collection === 'tasks' && e.main.row.data?.type === 'bug' ? 'Bug'
     : (COLLECTION_NAMES[e.main.row.collection] || humanizeKey(e.main.row.collection));
@@ -562,7 +562,7 @@ async function drawingDiff(a, b) {
   const model = await getIdeas();
   const sec = id => (id ? (model.section(id) ? model.path(id).map(s => s.name).join(' › ') : '(a deleted section)') : 'Not sorted');
   const idea = id => (id ? (model.get(id)?.data.title || '(a deleted idea)') : 'None');
-  const kind = d => `${d.kind === 'free' ? 'Free drawing' : 'Pixel art'}, ${d.width} × ${d.height}`;
+  const kind = d => `${d.kind === 'reference' ? 'Reference picture' : d.kind === 'free' ? 'Free drawing' : 'Pixel art'}, ${d.width} × ${d.height}`;
   if (!a) {
     const out = [line('Name', null, b.name), line('Kind', null, kind(b)), line('Section', null, sec(b.section))];
     if (b.idea) out.push(line('Belongs to idea', null, idea(b.idea)));

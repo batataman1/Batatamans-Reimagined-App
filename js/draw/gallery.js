@@ -10,12 +10,13 @@ import { getIdeas } from '../ideas/model.js';
 import { sectionSelect } from '../ideas/actions.js';
 import { createEngine } from './engine.js';
 import {
-  getDrawings, createDrawing, removeDrawing, storableDrawing, drawingFile, scaleFor,
+  getDrawings, createDrawing, removeDrawing, storableDrawing, fileOf, scaleFor, importReference,
   PIXEL_SIZES, FREE_SHAPES, MAX_SIDE,
 } from './model.js';
 
 const drawingHref = id => `#/ideas/draw/${encodeURIComponent(id)}`;
 const sizeText = d => `${d.data.width} × ${d.data.height}`;
+const kindText = d => (d.data.kind === 'reference' ? `Reference picture ${sizeText(d)}` : d.data.kind === 'pixel' ? `Pixel art ${sizeText(d)}` : 'Free drawing');
 
 /* ---------- Thumbnails ---------- */
 
@@ -25,7 +26,9 @@ store.on(e => { if (e?.type === 'sync') thumbs.clear(); });
 
 export function thumbCanvas(d, size = 160) {
   const px = size * 2;
-  const c = h('canvas', { class: `dg-thumb${d.data.kind === 'pixel' ? ' pixelated' : ''}`, width: px, height: px, 'aria-hidden': 'true' });
+  // Pixel art, and small reference pictures (like a texture), stay sharp.
+  const sharp = d.data.kind === 'pixel' || (d.data.kind === 'reference' && Math.max(d.data.width, d.data.height) <= 128);
+  const c = h('canvas', { class: `dg-thumb${sharp ? ' pixelated' : ''}`, width: px, height: px, 'aria-hidden': 'true' });
   const blob = d.file?.blob;
   if (!blob) return c;
   (async () => {
@@ -36,7 +39,7 @@ export function thumbCanvas(d, size = 160) {
       try {
         bmp = await createImageBitmap(blob, {
           resizeWidth: Math.max(1, Math.round(d.data.width * f)), resizeHeight: Math.max(1, Math.round(d.data.height * f)),
-          resizeQuality: d.data.kind === 'pixel' ? 'pixelated' : 'high',
+          resizeQuality: sharp ? 'pixelated' : 'high',
         });
       } catch { bmp = await createImageBitmap(blob).catch(() => null); }
       if (!bmp) return;
@@ -44,7 +47,7 @@ export function thumbCanvas(d, size = 160) {
       thumbs.set(key, bmp);
     }
     const g = c.getContext('2d');
-    g.imageSmoothingEnabled = d.data.kind !== 'pixel';
+    g.imageSmoothingEnabled = !sharp;
     const f = Math.min(px / bmp.width, px / bmp.height);
     const w = bmp.width * f, hh = bmp.height * f;
     g.drawImage(bmp, (px - w) / 2, (px - hh) / 2, w, hh);
@@ -85,30 +88,47 @@ export function drawingCard(d, ctx, { where = '', small = false } = {}) {
     h('div', { class: 'dg-body' },
       h('a', { class: 'dg-name tk-open', href: drawingHref(d.id), text: d.data.name }),
       h('span', { class: 'muted small dg-sub' },
-        [d.data.kind === 'pixel' ? `Pixel art ${sizeText(d)}` : 'Free drawing', where, small ? '' : idea ? `Idea: ${idea.data.title || '(no title)'}` : ''].filter(Boolean).join(' · ')),
+        [kindText(d), where, small ? '' : idea ? `Idea: ${idea.data.title || '(no title)'}` : ''].filter(Boolean).join(' · ')),
       d.dirty ? h('span', { class: 'tag tag-dirty', text: 'Not pushed' }) : null),
     more);
 }
 
 function drawingMenu(d, anchor, ctx) {
+  const ref = d.data.kind === 'reference';
   openPopup({
     rect: anchor.getBoundingClientRect(),
     title: d.data.name,
     items: [
-      { label: 'Open', icon: 'brush', onPick: () => ctx.ui.go(`draw/${d.id}`) },
+      { label: 'Open', icon: ref ? 'image' : 'brush', onPick: () => ctx.ui.go(`draw/${d.id}`) },
       { label: 'Name, section and idea…', icon: 'edit', onPick: () => detailsDialog(d, ctx.model) },
-      { label: 'Export PNG…', icon: 'download', onPick: () => exportDialog(d) },
-      { label: 'Duplicate', icon: 'copy', onPick: () => duplicateDrawing(d, ctx.ui) },
+      ref ? null : { label: 'Export PNG…', icon: 'download', onPick: () => exportDialog(d) },
+      ref ? null : { label: 'Duplicate', icon: 'copy', onPick: () => duplicateDrawing(d, ctx.ui) },
       {
         label: 'Delete', icon: 'trash',
         onPick: async () => {
           if (!(await confirmDeleteDrawing(d))) return;
-          try { await removeDrawing(d.id); } catch (err) { errorDialog(err, "The drawing couldn't be deleted"); return; }
-          toast('Drawing deleted. Push to remove it from GitHub too.');
+          try { await removeDrawing(d.id, d.data); } catch (err) { errorDialog(err, "It couldn't be deleted"); return; }
+          toast(`${ref ? 'Picture' : 'Drawing'} deleted. Push to remove it from GitHub too.`);
         },
       },
-    ],
+    ].filter(Boolean),
   });
+}
+
+/** A picture from the device, saved as a reference (to look at and pick colours from) and opened. */
+export function addReferenceFromDevice(ctx, { section = null, idea = null } = {}) {
+  const input = h('input', { type: 'file', accept: 'image/png,image/jpeg,image/webp,image/gif', hidden: true, class: 'dg-file' });
+  document.body.append(input);
+  input.addEventListener('change', async () => {
+    const file = input.files?.[0];
+    input.remove();
+    if (!file) return;
+    try {
+      const ref = await importReference(file, { section, idea });
+      ctx.ui.go(`draw/${ref.id}`);
+    } catch (err) { errorDialog(err, "The picture couldn't be added"); }
+  });
+  input.click();
 }
 
 /* ---------- New drawing ---------- */
@@ -211,7 +231,7 @@ export function detailsDialog(d, model) {
       h('label', { class: 'field' }, h('span', { class: 'field-label', text: 'Section' }), secSel),
       h('label', { class: 'field' }, h('span', { class: 'field-label', text: 'Belongs to idea' }), ideaSel,
         h('span', { class: 'field-hint', text: 'The idea shows this drawing on its page.' })),
-      h('p', { class: 'muted small', text: `${d.data.kind === 'pixel' ? 'Pixel art' : 'Free drawing'}, ${d.data.width} × ${d.data.height} squares.` }),
+      h('p', { class: 'muted small', text: d.data.kind === 'reference' ? `Reference picture, ${d.data.width} × ${d.data.height} pixels.` : `${d.data.kind === 'pixel' ? 'Pixel art' : 'Free drawing'}, ${d.data.width} × ${d.data.height} squares.` }),
       error),
     actions: [{ id: 'cancel', label: 'Cancel', kind: 'quiet' }, { id: 'save', label: 'Save', kind: 'primary', onClick: save }],
   });
@@ -229,7 +249,7 @@ async function madeCopy(id, ui) {
 
 export async function duplicateDrawing(d, ui) {
   try {
-    const file = await store.getFile(drawingFile(d.id));
+    const file = await store.getFile(fileOf(d));
     const copy = await createDrawing({ ...d.data, name: `${d.data.name} (copy)`, file: file?.blob || null });
     madeCopy(copy.id, ui);
   } catch (err) { errorDialog(err, "The drawing couldn't be copied"); }
@@ -249,10 +269,11 @@ export async function copyWithPicture(d, ui, source, fn, label) {
 }
 
 export function confirmDeleteDrawing(d) {
+  const ref = d.data.kind === 'reference';
   return confirmDialog({
     title: `Delete “${d.data.name}”?`,
-    body: h('p', { text: 'The drawing and its picture are deleted.' }),
-    confirm: 'Delete drawing', danger: true,
+    body: h('p', { text: ref ? 'The reference picture is deleted. Your drawings keep their colours.' : 'The drawing and its picture are deleted.' }),
+    confirm: ref ? 'Delete picture' : 'Delete drawing', danger: true,
   });
 }
 
@@ -265,7 +286,7 @@ const fileName = name => `${String(name || 'drawing').toLowerCase().normalize('N
 export async function exportDialog(d, engine = null) {
   const data = d.data;
   if (!engine) {
-    const file = await store.getFile(drawingFile(d.id));
+    const file = await store.getFile(fileOf(d));
     engine = createEngine({ width: data.width, height: data.height, scale: data.scale || scaleFor(data.width, data.height) });
     await engine.load(file?.blob);
   }

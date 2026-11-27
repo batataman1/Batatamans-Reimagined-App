@@ -7,7 +7,7 @@
 //   i/<idea>       an idea's page (ideas/editor.js)
 //   m/<key>        the mind map of all ideas (m/all), Not sorted (m/none) or a section (ideas/map.js)
 //   d/<key>        the drawings of all ideas, Not sorted or a section (draw/gallery.js)
-//   draw/<id>      a drawing, full screen (draw/editor.js)
+//   draw/<id>      a drawing, full screen, with the other open drawings as tabs (draw/workspace.js)
 //
 // The list is an outline: an idea that comes under another idea is indented below it, with a
 // fold button. Which ideas are folded is remembered on this device (not synced).
@@ -27,8 +27,8 @@ import { ideaEditorView } from './editor.js';
 import { mapScreen } from './map.js';
 import { sectionSelect, addUnderDialog, moveIdeaDialog, confirmDeleteIdea, removeIdea, makeTaskDialog, moveIdeaTo } from './actions.js';
 import { filesOfPage, isFileOfPage } from '../wiki/images.js';
-import { galleryContent, newDrawingDialog } from '../draw/gallery.js';
-import { drawingEditorView } from '../draw/editor.js';
+import { galleryContent, newDrawingDialog, addReferenceFromDevice } from '../draw/gallery.js';
+import { drawingWorkspaceView, openDrawingTabs } from '../draw/workspace.js';
 
 const APP_TITLE = "Batataman's Reimagined";
 
@@ -46,7 +46,7 @@ export function renderIdeasView(el, path, ctx) {
   const route = parseIdeasPath(path);
   document.title = `Ideas · ${APP_TITLE}`;
   if (route.view === 'idea') return ideaEditorView(el, ctx, route.id);
-  if (route.view === 'drawing') return drawingEditorView(el, ctx, route.id);
+  if (route.view === 'drawing') return drawingWorkspaceView(el, ctx, route.id);
   return homeView(el, ctx, route.section, route.view);
 }
 
@@ -521,10 +521,17 @@ function homeView(el, ctx, key, mode = 'list') {
   } else {
     drawContent();
   }
+  const here = key === 'all' || key === 'none' ? null : key;
+  const openTabs = mode === 'draw' ? openDrawingTabs() : null;
+  const stillOpen = openTabs ? openTabs.open.filter(id => ctx.drawings.get(id)) : [];
   const newDrawingRow = mode === 'draw' ? h('div', { class: 'dg-head' },
-    h('button', { type: 'button', class: 'btn btn-primary', onclick: () => newDrawingDialog(ctx, { section: key === 'all' || key === 'none' ? null : key }) },
+    h('button', { type: 'button', class: 'btn btn-primary', onclick: () => newDrawingDialog(ctx, { section: here }) },
       icon('plus', { size: 16 }), 'New drawing'),
-    h('span', { class: 'muted small', text: 'Pixel art and free drawings. Tap one to draw.' })) : null;
+    h('button', { type: 'button', class: 'btn', onclick: () => addReferenceFromDevice(ctx, { section: here }) },
+      icon('image', { size: 16 }), 'Add a reference picture'),
+    stillOpen.length ? h('a', {
+      class: 'btn dg-open-tabs', href: `#/ideas/draw/${encodeURIComponent(stillOpen.includes(openTabs.active) ? openTabs.active : stillOpen[0])}`,
+    }, icon('brush', { size: 16 }), `Open drawings (${stillOpen.length})`) : null) : null;
 
   const n = mode === 'draw' ? ctx.drawings.inSection(key, model).length : model.count(key);
   clear(el, h('div', { class: 'tk-layout id-layout' },

@@ -8,10 +8,13 @@
 //   width, height,                  the pixel grid, in squares (16 x 16, 32 x 32, ...)
 //   scale,                          fine pixels per square (the picture is width*scale x height*scale)
 //   kind: "pixel" | "free",         how it was started (which pen and grid it opens with)
+//         | "reference",            a picture from the device to look at and pick colours from
+//   file: "drawings/<id>.webp"      references only: the picture's file (drawings use <id>.png)
 //   created: ISO time
 // }
-// The picture itself is one PNG file: files/drawings/<id>.png (fine size). There's one layer:
+// A drawing's picture is one PNG file: files/drawings/<id>.png (fine size). There's one layer:
 // the pixel pen fills whole squares, the free pen draws smooth lines on the same picture.
+// A reference keeps its own size (width x height pixels, scale 1).
 //
 // Collection "palettes", id "p-<random>": { name, colors: ["#rrggbb", ...], order }
 // Built-in palettes (below) can't be changed; "Make a copy" turns one into your own.
@@ -22,7 +25,9 @@ import { uid } from '../core/util.js';
 export const newDrawingId = () => uid('d');
 export const newPaletteId = () => uid('p');
 export const drawingFile = id => `drawings/${id}.png`;
-export const isDrawingFile = (path, id) => path === drawingFile(id);
+/** The picture file of a drawing or reference ({ id, data }). */
+export const fileOf = d => (typeof d?.data?.file === 'string' && d.data.file.startsWith(`drawings/${d.id}.`) ? d.data.file : drawingFile(d.id));
+export const isDrawingFile = (path, id) => String(path).startsWith(`drawings/${id}.`);
 
 /** Largest side of the fine picture: big enough for smooth lines, small enough for phones. */
 const FINE = 1024;
@@ -47,6 +52,11 @@ const clampSide = v => Math.max(1, Math.min(MAX_SIDE, Math.round(Number(v) || 0)
 
 /** A drawing record with every key present and sane. */
 export function normalizeDrawing(d) {
+  if (d?.kind === 'reference') {
+    const side = v => Math.max(1, Math.min(8192, Math.round(Number(v) || 1)));
+    return { ...d, name: String(d?.name || '').trim() || 'Picture', section: d?.section || null, idea: d?.idea || null,
+      width: side(d.width), height: side(d.height), scale: 1, kind: 'reference' };
+  }
   const width = clampSide(d?.width || 16), height = clampSide(d?.height || 16);
   const scale = Number.isInteger(d?.scale) && d.scale >= 1 && d.scale <= 64 ? d.scale : scaleFor(width, height);
   return {
@@ -64,8 +74,9 @@ export async function getDrawings() {
   const rows = await store.list('drawings');
   const files = new Map((await store.files()).filter(f => f.path.startsWith('drawings/')).map(f => [f.path, f]));
   const drawings = rows.map(r => {
-    const file = files.get(drawingFile(r.id)) || null;
-    return { id: r.id, data: normalizeDrawing(r.data), dirty: r.dirty || !!file?.dirty, file, updatedAt: r.updatedAt };
+    const data = normalizeDrawing(r.data);
+    const file = files.get(fileOf({ id: r.id, data })) || null;
+    return { id: r.id, data, dirty: r.dirty || !!file?.dirty, file, updatedAt: r.updatedAt };
   }).sort((a, b) => String(a.data.created || a.updatedAt).localeCompare(String(b.data.created || b.updatedAt)));
   const byId = new Map(drawings.map(d => [d.id, d]));
   return {
@@ -99,10 +110,44 @@ export async function createDrawing({ name, section = null, idea = null, width, 
   return { id, data };
 }
 
-/** Delete a drawing and its picture. */
-export async function removeDrawing(id) {
-  await store.removeFile(drawingFile(id));
+/** Delete a drawing (or reference) and its picture. */
+export async function removeDrawing(id, data = null) {
+  await store.removeFile(fileOf({ id, data }));
   await store.remove('drawings', id);
+}
+
+/* ---------- Reference pictures ---------- */
+
+const REF_TYPES = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp', 'image/gif': 'gif' };
+const REF_MAX_SIDE = 1600, REF_SHRINK_OVER = 1.5 * 1024 * 1024, REF_MAX_BYTES = 20 * 1024 * 1024;
+
+/**
+ * Save a picture from the device as a reference: big photos are shrunk to WebP (1600 px on the
+ * long side); small pictures (like a 16 x 16 texture) are kept exactly as they are.
+ */
+export async function importReference(file, { section = null, idea = null } = {}) {
+  if (!file || !REF_TYPES[file.type]) throw new Error("That file isn't a picture the app can use. Use a PNG, JPG, WebP or GIF.");
+  if (file.size > REF_MAX_BYTES) throw new Error('That picture is bigger than 20 MB. Make it smaller first.');
+  let bmp;
+  try { bmp = await createImageBitmap(file); } catch { throw new Error("This picture couldn't be opened."); }
+  let blob = file, type = file.type, width = bmp.width, height = bmp.height;
+  const f = Math.min(1, REF_MAX_SIDE / Math.max(width, height));
+  if (f < 1 || file.size > REF_SHRINK_OVER || type === 'image/gif') {
+    const c = Object.assign(document.createElement('canvas'), { width: Math.max(1, Math.round(width * f)), height: Math.max(1, Math.round(height * f)) });
+    const g = c.getContext('2d');
+    g.imageSmoothingQuality = 'high';
+    g.drawImage(bmp, 0, 0, c.width, c.height);
+    const smaller = await new Promise(r => c.toBlob(r, type === 'image/gif' ? 'image/png' : 'image/webp', 0.92));
+    if (smaller) { blob = smaller; type = smaller.type; width = c.width; height = c.height; }
+  }
+  bmp.close?.();
+  const id = newDrawingId();
+  const path = `drawings/${id}.${REF_TYPES[type] || 'png'}`;
+  const name = String(file.name || '').replace(/\.[a-z0-9]+$/i, '').replace(/[_-]+/g, ' ').trim().slice(0, 60) || 'Picture';
+  const data = normalizeDrawing({ name, section, idea, kind: 'reference', width, height, file: path, created: new Date().toISOString() });
+  await store.putFile(path, blob, { source: 'draw' });
+  await store.put('drawings', id, data);
+  return { id, data };
 }
 
 /* ---------- Colours ---------- */
