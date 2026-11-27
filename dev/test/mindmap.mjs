@@ -173,6 +173,23 @@ async function clickLine(page) {
   await page.mouse.click(p.x, p.y);
   await dlg(page).locator('.mm-styles').waitFor();
 }
+/** The arrowheads on the map: how many, how many point from → to, and whether a bubble covers any. */
+async function arrowInfo(page, fromLabel, toLabel) {
+  const f = await mid(bub(page, fromLabel)), t = await mid(bub(page, toLabel));
+  return page.evaluate(({ f, t }) => {
+    const boxes = [...document.querySelectorAll('.mm-b')].map(b => b.getBoundingClientRect());
+    const out = { count: 0, forward: 0, covered: 0 };
+    for (const el of document.querySelectorAll('.mm-arrow-along')) {
+      const nums = el.getAttribute('d').match(/-?[\d.]+/g).map(Number);
+      const tip = { x: nums[0], y: nums[1] }, base = { x: (nums[2] + nums[4]) / 2, y: (nums[3] + nums[5]) / 2 };
+      out.count++;
+      if ((tip.x - base.x) * (t.x - f.x) + (tip.y - base.y) * (t.y - f.y) > 0) out.forward++;
+      const r = el.getBoundingClientRect(), cx = r.x + r.width / 2, cy = r.y + r.height / 2;
+      if (boxes.some(b => cx > b.left && cx < b.right && cy > b.top && cy < b.bottom)) out.covered++;
+    }
+    return out;
+  }, { f, t });
+}
 const idea = async (page, title) => (await list(page, 'ideas')).find(i => i.title === title) || null;
 const near = (a, b, d = 2) => Math.abs(a - b) <= d;
 
@@ -332,11 +349,23 @@ assert.equal((await idea(A, 'Termites make hollow logs')).connections[0].style, 
 await A.waitForTimeout(200);
 await clickLine(A);
 await dlg(A).locator('.mm-style[data-style="arrow"]').click();
-await A.locator('.mm-link[marker-end]').waitFor();
+await A.locator('.mm-arrow-along').first().waitFor();
 await A.waitForTimeout(200);
+// Small arrows along the line, all pointing from the idea it was drawn from, none under a bubble
+// (these two bubbles almost touch, so one sits in the gap; a longer line gets several, below)
+let arr = await arrowInfo(A, 'Termites make hollow logs', 'More termite nest mechanics');
+await A.screenshot({ path: SHOTS + 'm5-arrows-along.png' });
+assert.ok(arr.count >= 1, 'an arrow shows between the bubbles');
+assert.equal(arr.forward, arr.count);
+assert.equal(arr.covered, 0);
+assert.equal(await A.locator('[marker-end], marker').count(), 0);
 await clickLine(A);
 await dlg(A).getByRole('button', { name: 'Turn the arrow around' }).click();
 await A.waitForTimeout(300);
+arr = await arrowInfo(A, 'Termites make hollow logs', 'More termite nest mechanics');
+assert.ok(arr.count >= 1);
+assert.equal(arr.covered, 0);
+assert.equal(arr.forward, 0, 'turned around: every arrow points the other way');
 assert.equal((await idea(A, 'Termites make hollow logs')).connections, undefined);
 assert.deepEqual((await idea(A, 'More termite nest mechanics')).connections, [{ id: 'i-termites-make-hollow-logs', style: 'arrow' }]);
 await A.getByRole('button', { name: 'Undo' }).click();
@@ -345,6 +374,17 @@ await A.waitForTimeout(300);
 assert.deepEqual((await idea(A, 'Termites make hollow logs')).connections, [{ id: 'i-termite-nest-mechanics', style: 'arrow' }]);
 assert.equal((await idea(A, 'More termite nest mechanics')).connections, undefined);
 await A.screenshot({ path: SHOTS + 'm5-arrow.png' });
+// Moving a bubble further away gives the line more arrows (drawn again while dragging); Undo
+const arrBefore = (await arrowInfo(A, 'Termites make hollow logs', 'More termite nest mechanics')).count;
+await dragBubble(A, 'More termite nest mechanics', 0, 260);
+arr = await arrowInfo(A, 'Termites make hollow logs', 'More termite nest mechanics');
+assert.ok(arr.count > arrBefore && arr.count >= 3, `more arrows on a longer line (${arrBefore} → ${arr.count})`);
+await A.screenshot({ path: SHOTS + 'm5-arrows-long.png' });
+assert.equal(arr.forward, arr.count);
+assert.equal(arr.covered, 0);
+await A.getByRole('button', { name: 'Undo' }).click();
+await expectToast(A, /Undone: Move/);
+await A.waitForTimeout(400);
 // Remove it (from either end), and Undo brings it back
 const withConn = await menu(A, bub(A, 'More termite nest mechanics').locator('.mm-more'), 'Remove a connection');
 assert.ok(withConn.includes('Remove a connection'));

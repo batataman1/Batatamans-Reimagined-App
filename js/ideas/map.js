@@ -35,6 +35,9 @@ const svg = (tag, attrs = {}) => {
 };
 const ZOOM_MIN = 0.2, ZOOM_MAX = 3;
 const LONG_PRESS = 500;
+// Arrow connections: small arrowheads about every ARROW_EVERY map units along the line, where no
+// bubble covers it (ARROW_GAP = room left around a bubble, for its outline and fold button).
+const ARROW_LEN = 13, ARROW_WIDTH = 11, ARROW_EVERY = 46, ARROW_MAX = 30, ARROW_GAP = 12;
 
 /** Map state kept while the Ideas tab is open (not saved). */
 export function mapState() {
@@ -117,13 +120,91 @@ export function mapScreen(ctx, key, addRow = null) {
     worldEl.append(b);
   }
 
+  // Bubble sizes in map units, measured once they're on screen (a guess from the size before that).
+  const boxes = new Map();
+  function boxOf(n) {
+    const known = boxes.get(n.key);
+    if (known) return known;
+    const b = bubbles.get(n.key);
+    if (b?.offsetWidth) {
+      const box = { hw: b.offsetWidth / 2, hh: b.offsetHeight / 2 };
+      boxes.set(n.key, box);
+      return box;
+    }
+    const s = SIZE_STYLE[n.size] || SIZE_STYLE.m;
+    return { hw: s.width / 2 + 24, hh: s.font * 0.6 + 12 };
+  }
+
+  /** Every bubble on this map as a box in map units (with room around it), for placing arrows. */
+  const bubbleBoxes = () => visible.map(n => {
+    const p = pos.get(n.key), bx = boxOf(n);
+    return { x0: p.x - bx.hw - ARROW_GAP, x1: p.x + bx.hw + ARROW_GAP, y0: p.y - bx.hh - ARROW_GAP, y1: p.y + bx.hh + ARROW_GAP };
+  });
+
+  /**
+   * Small arrowheads along a connection line (the curve a → c → b), pointing towards b.
+   * They go only on the stretches of the line that no bubble covers (the two ends, or any other
+   * bubble the line passes under), spread evenly, so a bubble can't hide them. When the line is
+   * covered almost everywhere, one sits in the middle of the longest open stretch.
+   */
+  function arrowsAlong(a, c, b, allBoxes) {
+    const at = t => {
+      const u = 1 - t;
+      return { x: u * u * a.x + 2 * u * t * c.x + t * t * b.x, y: u * u * a.y + 2 * u * t * c.y + t * t * b.y };
+    };
+    // Only bubbles near the line matter (the curve stays inside the box of a, c and b).
+    const lx0 = Math.min(a.x, b.x, c.x), lx1 = Math.max(a.x, b.x, c.x), ly0 = Math.min(a.y, b.y, c.y), ly1 = Math.max(a.y, b.y, c.y);
+    const near = allBoxes.filter(q => q.x1 > lx0 && q.x0 < lx1 && q.y1 > ly0 && q.y0 < ly1);
+    const covered = p => near.some(q => p.x > q.x0 && p.x < q.x1 && p.y > q.y0 && p.y < q.y1);
+    // Points along the line, about every 5 map units, with the distance from the start.
+    const N = Math.max(24, Math.min(240, Math.ceil(Math.hypot(b.x - a.x, b.y - a.y) / 5)));
+    const pts = [], len = [0];
+    for (let i = 0; i <= N; i++) pts.push(at(i / N));
+    for (let i = 1; i <= N; i++) len.push(len[i - 1] + Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y));
+    // Open stretches: runs of points no bubble covers.
+    const open = [];
+    let runStart = -1;
+    for (let i = 0; i <= N + 1; i++) {
+      const free = i <= N && !covered(pts[i]);
+      if (free && runStart < 0) runStart = i;
+      if (!free && runStart >= 0) { open.push([len[runStart], len[i - 1]]); runStart = -1; }
+    }
+    const spots = [];
+    for (const [s0, s1] of open) {
+      if (s1 - s0 < ARROW_LEN + 4) continue;
+      const count = Math.max(1, Math.floor((s1 - s0) / ARROW_EVERY));
+      for (let k = 0; k < count; k++) spots.push(s0 + ((s1 - s0) * (k + 0.5)) / count);
+    }
+    if (!spots.length) {
+      const best = open.sort((x, y) => (y[1] - y[0]) - (x[1] - x[0]))[0];
+      spots.push(best ? (best[0] + best[1]) / 2 : len[N] / 2);
+    }
+    const out = [];
+    for (const s of spots.slice(0, ARROW_MAX)) {
+      let j = 0;
+      while (j < N - 1 && len[j + 1] < s) j++;
+      const seg = len[j + 1] - len[j] || 1;
+      const t = Math.min(1, Math.max(0, (j + (s - len[j]) / seg) / N));
+      const p = at(t);
+      // Direction of the curve at t
+      let dx = 2 * (1 - t) * (c.x - a.x) + 2 * t * (b.x - c.x), dy = 2 * (1 - t) * (c.y - a.y) + 2 * t * (b.y - c.y);
+      const dl = Math.hypot(dx, dy) || 1;
+      dx /= dl; dy /= dl;
+      const hl = ARROW_LEN / 2, hw = ARROW_WIDTH / 2;
+      const tip = { x: p.x + dx * hl, y: p.y + dy * hl };
+      const bx = p.x - dx * hl, by = p.y - dy * hl;
+      const r = v => Math.round(v * 10) / 10;
+      out.push(svg('path', {
+        class: 'mm-arrow-head mm-arrow-along',
+        d: `M${r(tip.x)},${r(tip.y)} L${r(bx - dy * hw)},${r(by + dx * hw)} L${r(bx + dy * hw)},${r(by - dx * hw)} z`,
+      }));
+    }
+    return out;
+  }
+
   function drawLines() {
     clear(lines);
-    lines.append(svg('defs', {}));
-    const defs = lines.firstChild;
-    const arrowHead = svg('marker', { id: 'mm-arrow', viewBox: '0 0 10 10', refX: 8, refY: 5, markerWidth: 6, markerHeight: 6, orient: 'auto-start-reverse' });
-    arrowHead.append(svg('path', { d: 'M0,0 L10,5 L0,10 z', class: 'mm-arrow-head' }));
-    defs.append(arrowHead);
+    let boxesNow = null;   // worked out only when there's an arrow to place
     for (const n of visible) {
       if (n === center || !n.parent || !shown.has(n.parent.key)) continue;
       const a = pos.get(n.parent.key), b = pos.get(n.key);
@@ -135,22 +216,16 @@ export function mapScreen(ctx, key, addRow = null) {
         const other = world.get(`i:${c.id}`);
         if (!other || !shown.has(other.key)) continue;
         const style = LINE_STYLES[c.style] || LINE_STYLES.dashed;
-        const a = pos.get(n.key);
-        let b = pos.get(other.key);
+        const a = pos.get(n.key), b = pos.get(other.key);
         const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
         const bend = 0.18;
         const cx = mx - (b.y - a.y) * bend, cy = my + (b.x - a.x) * bend;
-        if (style.arrow) {
-          // Stop at the edge of the bubble it points to, so the arrowhead shows.
-          const len = Math.hypot(b.x - cx, b.y - cy) || 1;
-          const back = Math.min(len * 0.45, radiusOf(other) * 0.7 + 8);
-          b = { x: b.x - ((b.x - cx) / len) * back, y: b.y - ((b.y - cy) / len) * back };
-        }
         const d = `M${a.x},${a.y} Q${cx},${cy} ${b.x},${b.y}`;
         const path = svg('path', { class: `mm-link mm-link-${c.style}${style.dots ? ' dots' : ''}`, d });
         if (style.dash) path.setAttribute('stroke-dasharray', style.dash);
-        if (style.arrow) path.setAttribute('marker-end', 'url(#mm-arrow)');
         lines.append(path);
+        // Arrows point from the idea the connection is stored on to the other one.
+        if (style.arrow) lines.append(...arrowsAlong(a, { x: cx, y: cy }, b, boxesNow ||= bubbleBoxes()));
         // A wide invisible copy you can tap to change the line.
         lines.append(svg('path', { class: 'mm-link-hit', d, 'data-from': n.id, 'data-to': c.id }));
       }
@@ -368,10 +443,10 @@ export function mapScreen(ctx, key, addRow = null) {
     const swatch = st => {
       const style = LINE_STYLES[st];
       const s2 = svg('svg', { class: 'mm-swatch', width: 96, height: 16, viewBox: '0 0 96 16', 'aria-hidden': 'true' });
-      const p = svg('path', { class: `mm-link${style.dots ? ' dots' : ''}`, d: style.arrow ? 'M4,8 L84,8' : 'M4,8 L92,8' });
+      const p = svg('path', { class: `mm-link${style.dots ? ' dots' : ''}`, d: 'M4,8 L92,8' });
       if (style.dash) p.setAttribute('stroke-dasharray', style.dash);
       s2.append(p);
-      if (style.arrow) s2.append(svg('path', { class: 'mm-arrow-head', d: 'M82,3 L92,8 L82,13 z' }));
+      if (style.arrow) for (const x of [24, 48, 72]) s2.append(svg('path', { class: 'mm-arrow-head', d: `M${x + 5},8 L${x - 5},3 L${x - 5},13 z` }));
       return s2;
     };
     const m = openModal({
@@ -695,6 +770,7 @@ export function mapScreen(ctx, key, addRow = null) {
       applyFull();
       sized = true;
       size();
+      drawLines();   // again, now that the bubbles can be measured (arrows go between them)
       if (view) applyView(); else fit();
     },
     cleanup() {

@@ -1540,7 +1540,7 @@ h3.id-shead { font-size: var(--fs-body); }
 .mm-line { stroke: var(--line-strong); stroke-width: 2.5; stroke-linecap: round; }
 .mm-link { fill: none; stroke: var(--accent); stroke-width: 2.5; stroke-linecap: butt; opacity: 0.9; }
 .mm-link.dots { stroke-width: 3.5; stroke-linecap: round; }
-.mm-arrow-head { fill: var(--accent); }
+.mm-arrow-head { fill: var(--accent); stroke: var(--accent); stroke-width: 1.5; stroke-linejoin: round; }
 .mm-link-hit { fill: none; stroke: transparent; stroke-width: 18; pointer-events: stroke; cursor: pointer; }
 .mm-styles { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px; margin: 8px 0 12px; }
 .mm-style {
