@@ -22,7 +22,8 @@ export const IMPORT_FORMAT = 'batataman-import';
 
 export const COLLECTIONS = {
   wiki: 'Wiki page',
-  templates: 'Template',
+  groups: 'Wiki group',
+  templates: 'Wiki template',
   tasks: 'Task',
   ideas: 'Idea',
   sections: 'Idea section',

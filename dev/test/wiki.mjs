@@ -149,6 +149,7 @@ assert.equal(await A.locator('.search-results .page-row-name').first().textConte
 await A.screenshot({ path: SHOTS + 'w8-search.png' });
 await A.locator('.search-box input').press('Enter');
 await A.waitForFunction(() => location.hash === '#/wiki/p/rope');
+await A.locator('#view h1', { hasText: 'Rope' }).waitFor();     // the page draws a moment after the address changes
 await A.locator('.search-box input').count().then(n => assert.equal(n, 0));
 await A.goBack();
 await A.waitForFunction(() => document.querySelector('.search-box input')?.value === 'rope');

@@ -7,6 +7,9 @@
 //   p/ostrich          a page
 //   e/ostrich          editing a page (wiki/editor.js)
 //   unsorted           pages that aren't in a group yet
+//   c                  Customize: groups and templates (wiki/customize.js)
+//   c/g/mobs           editing a group and its sub-groups (c/g/mobs/neutral: that sub-group highlighted)
+//   c/t/mob            editing a template
 
 import { h, clear, plural, timeAgo } from '../core/util.js';
 import { store } from '../core/store.js';
@@ -16,6 +19,7 @@ import { pageName, humanizeId } from './model.js';
 import { renderText, renderBody, plainText, pageLink } from './text.js';
 import { topNav, fileImage, safeIcon } from './parts.js';
 import { editorView, newPageDialog } from './editor.js';
+import { customizeView, groupEditorView, templateEditorView } from './customize.js';
 import { isPicturePath } from './images.js';
 import { pageMenu } from './actions.js';
 
@@ -28,6 +32,12 @@ export function parseWikiPath(path) {
   if (kind === 'p' && a) return { view: 'page', id: a };
   if (kind === 'e' && a) return { view: 'edit', id: a };
   if (kind === 'unsorted') return { view: 'unsorted' };
+  if (kind === 'c') {
+    const [, what, id, sub] = String(path || '').split('/').map(x => decodeURIComponent(x));
+    if (what === 'g' && id) return { view: 'cgroup', group: id, sub: sub || null };
+    if (what === 't' && id) return { view: 'ctemplate', id };
+    return { view: 'custom' };
+  }
   return { view: 'home' };
 }
 
@@ -44,6 +54,9 @@ export function renderWikiView(el, path, wiki, ui) {
     case 'page': return pageView(el, wiki, ui, route.id);
     case 'edit': return wiki.get(route.id) ? editorView(el, wiki, ui, route.id) : missingPageView(el, wiki, ui, route.id);
     case 'unsorted': return unsortedView(el, wiki, ui);
+    case 'custom': return customizeView(el, wiki, ui);
+    case 'cgroup': return groupEditorView(el, wiki, ui, route.group, route.sub);
+    case 'ctemplate': return templateEditorView(el, wiki, ui, route.id);
     default: return homeView(el, wiki, ui);
   }
 }
@@ -93,8 +106,12 @@ function pageRow(page, wiki, ui, { showPlace = false, snippet } = {}) {
 const pageList = (pages, wiki, ui, opts) => h('ul', { class: 'page-list' }, pages.map(p => pageRow(p, wiki, ui, opts)));
 
 const newPageButton = (wiki, ui, where = '') => h('button', {
-  type: 'button', class: 'btn btn-small head-action', onclick: () => newPageDialog(wiki, ui, { where }),
+  type: 'button', class: 'btn btn-small', onclick: () => newPageDialog(wiki, ui, { where }),
 }, icon('plus', { size: 16 }), 'New page');
+
+/** Buttons on the right of a screen's title. */
+const headActions = (...buttons) => h('span', { class: 'head-action head-actions' }, buttons);
+const linkButton = (href, iconName, label, title) => h('a', { class: 'btn btn-small', href, title }, icon(iconName, { size: 16 }), label);
 
 /* ---------- Start screen ---------- */
 
@@ -111,11 +128,11 @@ function homeView(el, wiki, ui) {
     total ? null : h('div', { class: 'notice' },
       h('p', { text: 'No wiki pages on this device yet.' }),
       h('p', { class: 'muted', text: 'Import the starter pages Claude made (Settings → Import from Claude → Choose a file), or tap Pull if another device already pushed them.' })),
-    h('div', { class: 'tiles' }, wiki.groups.map(g => h('a', { class: 'tile', href: `#/wiki/g/${g.id}` },
+    h('div', { class: 'tiles' }, wiki.visibleGroups.map(g => h('a', { class: 'tile', href: `#/wiki/g/${g.id}` },
       h('span', { class: 'tile-icon' }, safeIcon(g.icon, 28)),
       h('span', { class: 'tile-text' },
         h('span', { class: 'tile-name', text: g.name }),
-        h('span', { class: 'tile-sub', text: g.subgroups.map(s => s.name).join(' · ') })),
+        h('span', { class: 'tile-sub', text: g.subgroups.filter(s => !s.hidden).map(s => s.name).join(' · ') || 'No sub-groups yet' })),
       h('span', { class: 'tile-count', 'aria-label': plural(wiki.countIn(g.id), 'page'), text: String(wiki.countIn(g.id)) })))),
     wiki.unsorted.length ? h('section', { class: 'wiki-section wiki-unsorted' },
       h('h2', { text: 'Not sorted yet' }),
@@ -149,7 +166,7 @@ function homeView(el, wiki, ui) {
 
   clear(el,
     h('div', { class: 'tab-head' }, h('h1', { text: 'Wiki' }), h('span', { class: 'muted', text: plural(total, 'page') }),
-      newPageButton(wiki, ui)),
+      headActions(linkButton('#/wiki/c', 'sliders', 'Customize', 'Change groups, sub-groups and templates'), newPageButton(wiki, ui))),
     h('label', { class: 'search-box' }, icon('search', { size: 18 }), input),
     results, browse);
   update();
@@ -161,10 +178,15 @@ function groupView(el, wiki, ui, groupId) {
   const g = wiki.group(groupId);
   if (!g) return notFound(el, ui, 'This group');
   document.title = `${g.name} · ${APP_TITLE}`;
+  const shown = g.subgroups.filter(s => !s.hidden);
+  const hidden = g.subgroups.filter(s => s.hidden);
   clear(el,
     topNav(ui, '', { href: '#/wiki', label: 'Wiki' }),
-    h('div', { class: 'tab-head' }, h('h1', { text: g.name }), h('span', { class: 'muted', text: plural(wiki.countIn(g.id), 'page') })),
-    h('div', { class: 'tiles' }, g.subgroups.map(s => {
+    h('div', { class: 'tab-head' }, h('h1', { text: g.name }), h('span', { class: 'muted', text: plural(wiki.countIn(g.id), 'page') }),
+      headActions(linkButton(`#/wiki/c/g/${g.id}`, 'edit', 'Edit group', 'Name, icon, order and sub-groups'))),
+    g.hidden ? hiddenNotice(`This group is hidden on the Wiki start. Its pages still open from links and search.`, `#/wiki/c/g/${g.id}`) : null,
+    shown.length ? null : h('p', { class: 'muted', text: g.subgroups.length ? 'Every sub-group here is hidden.' : 'No sub-groups yet. Tap Edit group to add one.' }),
+    h('div', { class: 'tiles' }, shown.map(s => {
       const pages = wiki.pagesIn(g.id, s.id);
       const n = pages.length;
       return h('a', { class: 'tile', href: `#/wiki/g/${g.id}/${s.id}` },
@@ -173,7 +195,15 @@ function groupView(el, wiki, ui, groupId) {
           h('span', { class: 'tile-name', text: s.name }),
           h('span', { class: 'tile-sub', text: n ? pages.map(pageName).join(' · ') : 'No pages yet' })),
         h('span', { class: `tile-count${n ? '' : ' zero'}`, 'aria-label': plural(n, 'page'), text: String(n) }));
-    })));
+    })),
+    hidden.length ? h('p', { class: 'muted small hidden-subs' },
+      `Hidden here: ${hidden.map(s => `${s.name} (${plural(wiki.pagesIn(g.id, s.id).length, 'page')})`).join(', ')}. `,
+      h('a', { href: `#/wiki/c/g/${g.id}`, text: 'Show them again in Edit group' }), '.') : null);
+}
+
+function hiddenNotice(text, href) {
+  return h('div', { class: 'notice notice-hidden' },
+    h('p', h('strong', { text: 'Hidden. ' }), text, ' ', h('a', { href, text: 'Change this in Customize' }), '.'));
 }
 
 /* ---------- A sub-group ---------- */
@@ -187,8 +217,12 @@ function subView(el, wiki, ui, groupId, subId) {
   clear(el,
     topNav(ui, `g/${g.id}`, { href: '#/wiki', label: 'Wiki' }, { href: `#/wiki/g/${g.id}`, label: g.name }),
     h('div', { class: 'tab-head' }, h('h1', { text: s.name }),
-      h('span', { class: 'muted', text: `${plural(pages.length, 'page')} · ${wiki.templates[s.template]?.name || 'No'} template` }),
-      newPageButton(wiki, ui, `${g.id}/${s.id}`)),
+      h('span', { class: 'muted' }, `${plural(pages.length, 'page')} · `,
+        wiki.templates[s.template]
+          ? h('a', { href: `#/wiki/c/t/${s.template}`, class: 'tpl-link', title: 'Edit this template', text: `${wiki.templates[s.template].name} template` })
+          : 'no template'),
+      headActions(linkButton(`#/wiki/c/g/${g.id}/${s.id}`, 'edit', 'Edit', 'Name, icon and template of this sub-group'), newPageButton(wiki, ui, `${g.id}/${s.id}`))),
+    g.hidden || s.hidden ? hiddenNotice(`This ${s.hidden ? 'sub-group' : 'group'} is hidden. Its pages still open from links and search.`, `#/wiki/c/g/${g.id}/${s.id}`) : null,
     pages.length ? pageList(pages, wiki, ui) : h('p', { class: 'muted', text: 'No pages here yet.' }));
 }
 

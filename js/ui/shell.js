@@ -33,7 +33,7 @@ export function mountShell(root) {
     dataset: { tab: t.id },
     // A second tap on the open tab goes back to that tab's start.
     onclick: () => go(t.id, t.id === current ? '' : null),
-  }, icon(t.icon, { size: 24 }), h('span', { class: 'tab-label', text: t.label })));
+  }, icon(t.icon, { size: 28 }), h('span', { class: 'tab-label', text: t.label })));
 
   const tablist = h('nav', { class: 'tabs', role: 'tablist', 'aria-label': 'Sections', onkeydown: onTabKey }, tabButtons);
 

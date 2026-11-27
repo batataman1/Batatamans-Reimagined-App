@@ -12,6 +12,9 @@ import { icon } from './icons.js';
 import { getWiki } from '../wiki/model.js';
 import { plainText, nameFor } from '../wiki/text.js';
 import { filesOfPage, isFileOfPage, isPicturePath } from '../wiki/images.js';
+import { GROUPS, TEMPLATES } from '../config/wiki.js';
+import { builtinOrder } from '../wiki/custom.js';
+import { PICKABLE_ICONS } from '../config/icons.js';
 
 const COLLECTION_NAMES = { wiki: 'Wiki page', tasks: 'Task', bugs: 'Bug', ideas: 'Idea', groups: 'Wiki group', templates: 'Wiki template' };
 const STATUS_TEXT = { new: 'New', changed: 'Changed', deleted: 'Deleted' };
@@ -43,6 +46,23 @@ const kindText = e => {
 };
 
 const allItems = e => [e.main, ...e.files.map(f => f.item)];
+
+/** Saved changes to a built-in group or template (the app has it even without them). */
+const isBuiltin = e => e.main.kind === 'record'
+  && ((e.main.row.collection === 'groups' && GROUPS.some(g => g.id === e.main.row.id))
+    || (e.main.row.collection === 'templates' && !!TEMPLATES[e.main.row.id]));
+/** Its saved changes were removed: it goes back to the built-in. */
+const isReset = e => e.status === 'deleted' && isBuiltin(e);
+/** First changes to a built-in: shown as Changed (undo = back to the built-in), not New. */
+const shownStatus = e => (e.status === 'new' && isBuiltin(e) ? 'changed' : e.status);
+const statusText = e => (isReset(e) ? 'Reset to built-in' : STATUS_TEXT[shownStatus(e)]);
+
+/** Where the Edit button goes, or null. */
+function editAddress(e) {
+  if (e.main.kind !== 'record' || e.status === 'deleted') return null;
+  const id = encodeURIComponent(e.main.row.id);
+  return { wiki: `#/wiki/e/${id}`, groups: `#/wiki/c/g/${id}`, templates: `#/wiki/c/t/${id}` }[e.main.row.collection] || null;
+}
 
 /* ---------- The screen ---------- */
 
@@ -94,7 +114,7 @@ export async function reviewChanges(gh) {
   }
 
   function row(e) {
-    const isPage = e.main.kind === 'record' && e.main.row.collection === 'wiki';
+    const editTo = editAddress(e);
     const details = h('div', { class: 'rv-details', hidden: true });
     const toggle = h('button', {
       type: 'button', class: 'btn btn-small btn-quiet', 'aria-expanded': 'false',
@@ -117,29 +137,33 @@ export async function reviewChanges(gh) {
       onchange: ev => { ev.target.checked ? chosen.add(e.key) : chosen.delete(e.key); refreshCount(); },
     });
 
-    return h('li', { class: `rv-item rv-${e.status}` },
+    return h('li', { class: `rv-item rv-${shownStatus(e)}` },
       h('label', { class: 'rv-check' }, check),
       h('div', { class: 'rv-main' },
         h('div', { class: 'rv-head' },
           h('span', { class: 'rv-name', text: e.main.label }),
-          h('span', { class: `tag rv-tag rv-tag-${e.status}`, text: STATUS_TEXT[e.status] }),
+          h('span', { class: `tag rv-tag rv-tag-${shownStatus(e)}`, text: statusText(e) }),
           h('span', { class: 'rv-kind muted small', text: kindText(e) })),
         h('div', { class: 'button-row rv-actions' },
           toggle,
-          isPage && e.status !== 'deleted' ? h('button', {
+          editTo ? h('button', {
             type: 'button', class: 'btn btn-small btn-quiet',
-            onclick: () => { m.close('edit'); location.hash = `#/wiki/e/${encodeURIComponent(e.main.row.id)}`; },
+            onclick: () => { m.close('edit'); location.hash = editTo; },
           }, icon('edit', { size: 14 }), 'Edit') : null,
           h('button', {
             type: 'button', class: 'btn btn-small btn-quiet rv-undo',
             onclick: () => undo(e),
-          }, e.status === 'deleted' ? 'Bring back' : e.status === 'new' ? 'Delete' : 'Undo changes')),
+          }, e.status === 'deleted' ? 'Bring back' : shownStatus(e) === 'new' ? 'Delete' : 'Undo changes')),
         details));
   }
 
   async function undo(e) {
     const name = e.main.label;
-    const text = {
+    const text = isBuiltin(e) ? {
+      new: [`Undo the changes to “${name}”?`, 'It goes back to how it came with the app. The changes on this device are lost.', 'Undo changes'],
+      changed: [`Undo the changes to “${name}”?`, 'It goes back to how it is on GitHub. The changes on this device are lost.', 'Undo changes'],
+      deleted: [`Undo the reset of “${name}”?`, 'Your changes come back the way they are on GitHub.', 'Bring back'],
+    }[e.status] : {
       new: [`Delete “${name}”?`, "It's new and only on this device, so it will be gone for good.", 'Delete'],
       changed: [`Undo the changes to “${name}”?`, 'It goes back to how it is on GitHub. The changes on this device are lost.', 'Undo changes'],
       deleted: [`Bring back “${name}”?`, 'It comes back the way it is on GitHub.', 'Bring back'],
@@ -147,9 +171,10 @@ export async function reviewChanges(gh) {
     const ok = await confirmDialog({ title: text[0], body: h('p', { text: text[1] }), confirm: text[2], danger: e.status !== 'deleted' });
     if (!ok) return;
     try {
-      // If that page is open in the editor, leave it first so the editor doesn't save it again.
-      if (e.main.kind === 'record' && location.hash.startsWith(`#/wiki/e/${encodeURIComponent(e.main.row.id)}`)) {
-        location.hash = `#/wiki/p/${encodeURIComponent(e.main.row.id)}`;
+      // If it's open in an editor, leave the editor first so it doesn't save it again.
+      const open = editAddress({ ...e, status: 'changed' });
+      if (open && (location.hash === open || location.hash.startsWith(`${open}/`))) {
+        location.hash = e.main.row.collection === 'wiki' ? `#/wiki/p/${encodeURIComponent(e.main.row.id)}` : '#/wiki/c';
         await new Promise(r => setTimeout(r, 400));
       }
       await discard(e, gh, base);
@@ -193,7 +218,9 @@ async function describe(e, gh, base) {
   pics.push(...e.files);
 
   if (e.main.kind === 'record') {
-    if (e.status === 'deleted') {
+    if (isReset(e)) {
+      out.push(h('p', { class: 'small', text: 'Your changes were removed on this device, so it\'s back to how it came with the app. Pushing does the same on your other devices.' }));
+    } else if (e.status === 'deleted') {
       out.push(h('p', { class: 'small', text: 'Removed on this device. Pushing removes it from GitHub too (it stays in the repo\'s history).' }));
     } else {
       let before = {};
@@ -202,8 +229,10 @@ async function describe(e, gh, base) {
         before = JSON.parse(base64ToUtf8(blob.content)).data ?? {};
       }
       const after = e.main.row.data ?? {};
-      const lines = e.main.row.collection === 'wiki'
-        ? await wikiDiff(before, after)
+      const kind = e.main.row.collection;
+      const lines = kind === 'wiki' ? await wikiDiff(before, after)
+        : kind === 'groups' ? await groupDiff(e.main.row.id, e.status === 'new' ? null : before, after)
+        : kind === 'templates' ? await templateDiff(e.main.row.id, e.status === 'new' ? null : before, after)
         : genericDiff(before, after);
       out.push(lines.length
         ? h('dl', { class: 'rv-diff' }, lines)
@@ -323,6 +352,91 @@ function bodyDiff(a, b, txt) {
 }
 
 const short = v => (v === undefined ? '' : typeof v === 'string' ? v : JSON.stringify(v));
+
+/* Groups and templates: compared as they look in the app (saved changes on top of the built-in). */
+
+function groupAsShown(id, d) {
+  const b = GROUPS.find(g => g.id === id);
+  if (!d && !b) return null;
+  d = d || {};
+  return {
+    name: d.name || b?.name || id,
+    icon: d.icon || b?.icon || 'book',
+    order: typeof d.order === 'number' ? d.order : (b ? builtinOrder(id) : 1000),
+    hidden: !!d.hidden,
+    subgroups: (Array.isArray(d.subgroups) ? d.subgroups : b?.subgroups || []).filter(s => s && s.id),
+  };
+}
+
+async function groupDiff(id, a, b) {
+  const wiki = await getWiki();
+  const tplName = t => wiki.templates[t]?.name || t;
+  const A = groupAsShown(id, a), B = groupAsShown(id, b);
+  const out = [];
+  if (!A) {
+    out.push(line('New group', null, `${B.name}${B.subgroups.length ? ` with ${plural(B.subgroups.length, 'sub-group')}: ${B.subgroups.map(s => s.name).join(', ')}` : ''}`));
+    return out;
+  }
+  if (A.name !== B.name) out.push(line('Name', A.name, B.name));
+  const iconName = n => PICKABLE_ICONS.find(x => x[0] === n)?.[1] || n;
+  if (A.icon !== B.icon) out.push(line('Icon', iconName(A.icon), iconName(B.icon)));
+  if (A.order !== B.order) out.push(line('Place in the list', null, 'moved'));
+  if (A.hidden !== B.hidden) out.push(line('On the Wiki start', A.hidden ? 'hidden' : 'shown', B.hidden ? 'hidden' : 'shown'));
+  const changes = [];
+  const before = new Map(A.subgroups.map(s => [s.id, s]));
+  const after = new Map(B.subgroups.map(s => [s.id, s]));
+  for (const s of B.subgroups) {
+    const o = before.get(s.id);
+    if (!o) { changes.push(['+', `${s.name} (${tplName(s.template)} template)`]); continue; }
+    if (o.name !== s.name) changes.push(['~', `${o.name} renamed to ${s.name}`]);
+    if (o.template !== s.template) changes.push(['~', `${s.name}: ${tplName(o.template)} → ${tplName(s.template)} template`]);
+    if (o.icon !== s.icon) changes.push(['~', `${s.name}: new icon`]);
+    if (!!o.hidden !== !!s.hidden) changes.push(['~', `${s.name}: ${s.hidden ? 'hidden' : 'shown again'}`]);
+  }
+  for (const s of A.subgroups) if (!after.has(s.id)) changes.push(['−', s.name]);
+  const keptA = A.subgroups.filter(s => after.has(s.id)).map(s => s.id).join();
+  const keptB = B.subgroups.filter(s => before.has(s.id)).map(s => s.id).join();
+  if (keptA !== keptB) changes.push(['~', 'Order changed']);
+  if (changes.length) out.push(listLines('Sub-groups', changes));
+  return out;
+}
+
+async function templateDiff(id, a, b) {
+  const builtin = TEMPLATES[id];
+  const A = a ? { name: a.name, fields: Array.isArray(a.fields) ? a.fields : [] } : builtin ? { name: builtin.name, fields: builtin.fields } : null;
+  const B = { name: b.name, fields: Array.isArray(b.fields) ? b.fields : [] };
+  const kindOf = f => (f.kind === 'image' ? 'picture' : 'text');
+  const out = [];
+  if (!A) {
+    out.push(line('New template', null, `${B.name}: ${B.fields.length ? B.fields.map(f => f.label).join(', ') : 'no fields yet'}`));
+    return out;
+  }
+  if (A.name !== B.name) out.push(line('Name', A.name, B.name));
+  const before = new Map(A.fields.map(f => [f.key, f]));
+  const after = new Map(B.fields.map(f => [f.key, f]));
+  const changes = [];
+  for (const f of B.fields) {
+    const o = before.get(f.key);
+    if (!o) { changes.push(['+', `${f.label} (${kindOf(f)})`]); continue; }
+    if (o.label !== f.label) changes.push(['~', `${o.label} renamed to ${f.label}`]);
+    if (kindOf(o) !== kindOf(f)) changes.push(['~', `${f.label}: now ${kindOf(f) === 'picture' ? 'a picture' : 'text'}`]);
+  }
+  for (const f of A.fields) if (!after.has(f.key)) changes.push(['−', f.label]);
+  const keptA = A.fields.filter(f => after.has(f.key)).map(f => f.key).join();
+  const keptB = B.fields.filter(f => before.has(f.key)).map(f => f.key).join();
+  if (keptA !== keptB) changes.push(['~', 'Order changed']);
+  if (changes.length) out.push(listLines('Fields', changes));
+  return out;
+}
+
+/** A list of + (added), − (removed) and ~ (changed) lines. */
+function listLines(label, changes) {
+  return [
+    h('dt', { text: label }),
+    h('dd', h('ul', { class: 'rv-body' }, changes.map(([op, text]) => h('li', { class: op === '+' ? 'rv-new' : op === '−' ? 'rv-old' : '' },
+      h('span', { class: 'rv-op', text: op }), text)))),
+  ];
+}
 
 function genericDiff(a, b) {
   const out = [];

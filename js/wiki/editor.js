@@ -21,12 +21,18 @@ const APP_TITLE = "Batataman's Reimagined";
 
 /* ---------- Shared bits ---------- */
 
-/** A dropdown of every sub-group, grouped by group. value is "group/sub". */
+/**
+ * A dropdown of every sub-group, grouped by group. value is "group/sub".
+ * Hidden groups and sub-groups are left out, unless the page is already in one.
+ */
 function whereSelect(wiki, value, { allowNone = false, placeholder = 'Choose where it goes' } = {}) {
   const sel = h('select', { class: 'input', name: 'where', 'aria-label': 'Sub-group' },
     allowNone ? h('option', { value: '', text: 'Not sorted yet' }) : h('option', { value: '', text: placeholder, disabled: true }),
-    wiki.groups.map(g => h('optgroup', { label: g.name },
-      g.subgroups.map(s => h('option', { value: `${g.id}/${s.id}`, text: s.name })))));
+    wiki.groups.map(g => {
+      const subs = g.subgroups.filter(s => (!g.hidden && !s.hidden) || `${g.id}/${s.id}` === value);
+      return subs.length ? h('optgroup', { label: g.hidden ? `${g.name} (hidden)` : g.name },
+        subs.map(s => h('option', { value: `${g.id}/${s.id}`, text: s.hidden ? `${s.name} (hidden)` : s.name }))) : null;
+    }));
   sel.value = value || '';
   return sel;
 }
@@ -316,7 +322,8 @@ export function editorView(el, wiki, ui, id) {
     const extra = Object.keys(fields).filter(k => !known.some(f => f.key === k) && fields[k] != null && fields[k] !== '');
     clear(fieldsHost,
       tpl ? null : h('p', { class: 'muted', text: 'Choose where the page goes to get its fields.' }),
-      known.map(f => (f.kind === 'image' ? pictureFieldRow(f.key, f.label) : fieldRow(f.key, f.label))),
+      // A text field that holds a picture (its template changed it to text) still shows the picture.
+      known.map(f => (f.kind === 'image' || isPicturePath(fields[f.key]) ? pictureFieldRow(f.key, f.label) : fieldRow(f.key, f.label))),
       extra.length ? h('p', { class: 'muted small ed-extra-note', text: 'From a different template. They still show on the page; remove them if you don\'t need them.' }) : null,
       extra.map(k => (isPicturePath(fields[k]) ? pictureFieldRow(k, humanizeKey(k), true) : fieldRow(k, humanizeKey(k), true))));
   }

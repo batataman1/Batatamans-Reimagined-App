@@ -70,13 +70,23 @@ async function build() {
 
   const wiki = {
     pages, groups, templates, unsorted, backlinks,
+    /** Groups shown on the Wiki start (not hidden). */
+    visibleGroups: groups.filter(g => !g.hidden),
     get: id => pages.get(id) || null,
     group: id => groups.find(g => g.id === id) || null,
     placeOf: page => placed.get(page.id) || null,
     pagesIn: (groupId, subId) => bySub.get(`${groupId}/${subId}`) || [],
+    // A group's count leaves out its hidden sub-groups (their tiles aren't shown either).
     countIn: (groupId, subId) => subId
       ? (bySub.get(`${groupId}/${subId}`) || []).length
-      : (groups.find(g => g.id === groupId)?.subgroups || []).reduce((n, s) => n + (bySub.get(`${groupId}/${s.id}`) || []).length, 0),
+      : (groups.find(g => g.id === groupId)?.subgroups || []).filter(s => !s.hidden)
+          .reduce((n, s) => n + (bySub.get(`${groupId}/${s.id}`) || []).length, 0),
+    /** Every page in a group, hidden sub-groups included. */
+    allIn: groupId => (groups.find(g => g.id === groupId)?.subgroups || [])
+      .reduce((n, s) => n + (bySub.get(`${groupId}/${s.id}`) || []).length, 0),
+    /** The sub-groups that use a template: [{ group, sub, count }]. */
+    usersOf: templateId => groups.flatMap(g => g.subgroups.filter(s => s.template === templateId)
+      .map(s => ({ group: g, sub: s, count: (bySub.get(`${g.id}/${s.id}`) || []).length }))),
     templateOf(page) {
       const place = placed.get(page.id);
       return place ? templates[place.sub.template] || null : null;
@@ -165,37 +175,70 @@ function snippetFor(page, words, wiki) {
 
 /* ---------- Groups and templates (built-in + saved changes) ---------- */
 
+// Saved changes (collections "groups" and "templates", see wiki/custom.js) override the
+// built-ins in config/wiki.js by id. Hidden groups and sub-groups stay in the list (marked
+// hidden) so their pages keep their place; only the Wiki start and the pickers skip them.
+
+/** Template fields as saved: [{ key, label, kind? }], each key once. */
+export function cleanFields(list) {
+  const seen = new Set();
+  const out = [];
+  for (const x of Array.isArray(list) ? list : []) {
+    if (!x || !x.key || seen.has(String(x.key))) continue;
+    seen.add(String(x.key));
+    out.push({ key: String(x.key), label: String(x.label || x.key), ...(x.kind === 'image' ? { kind: 'image' } : {}) });
+  }
+  return out;
+}
+
 function mergeTemplates(rows) {
-  const out = structuredClone(TEMPLATES);
+  const out = {};
+  for (const [id, t] of Object.entries(TEMPLATES)) {
+    out[id] = { id, name: t.name, fields: cleanFields(t.fields), builtin: true, changed: false, custom: false };
+  }
   for (const r of rows) {
-    const d = r.data || {};
+    const d = isPlainObject(r.data) ? r.data : {};
     if (!Array.isArray(d.fields)) continue;
+    const builtin = !!TEMPLATES[r.id];
     out[r.id] = {
-      name: d.name || out[r.id]?.name || humanizeId(r.id),
-      fields: d.fields.filter(x => x && x.key).map(x => ({
-        key: String(x.key), label: String(x.label || x.key), ...(x.kind === 'image' ? { kind: 'image' } : {}) })),
-      custom: !TEMPLATES[r.id],
+      id: r.id,
+      name: String(d.name || out[r.id]?.name || humanizeId(r.id)).trim() || humanizeId(r.id),
+      fields: cleanFields(d.fields),
+      builtin, changed: builtin, custom: !builtin,
     };
   }
   return out;
 }
 
 function mergeGroups(rows) {
-  const out = GROUPS.map((g, i) => ({ ...structuredClone(g), order: (i + 1) * 10 }));
+  const out = GROUPS.map((g, i) => ({
+    ...structuredClone(g), order: (i + 1) * 10, builtin: true, changed: false, hidden: false,
+    subgroups: g.subgroups.map(s => ({ ...s, builtin: true, hidden: false })),
+  }));
   for (const r of rows) {
-    const d = r.data || {};
+    const d = isPlainObject(r.data) ? r.data : {};
     let g = out.find(x => x.id === r.id);
-    if (!g) { g = { id: r.id, name: humanizeId(r.id), icon: 'book', subgroups: [], order: 1000 }; out.push(g); }
-    if (d.name) g.name = d.name;
-    if (d.icon) g.icon = d.icon;
-    if (typeof d.order === 'number') g.order = d.order;
-    if (d.hidden) g.hidden = true;
+    if (g) g.changed = true;
+    else {
+      g = { id: r.id, name: humanizeId(r.id), icon: 'book', subgroups: [], order: 1000, builtin: false, changed: false, hidden: false };
+      out.push(g);
+    }
+    if (typeof d.name === 'string' && d.name.trim()) g.name = d.name.trim();
+    if (typeof d.icon === 'string' && d.icon) g.icon = d.icon;
+    if (typeof d.order === 'number' && Number.isFinite(d.order)) g.order = d.order;
+    g.hidden = !!d.hidden;
     if (Array.isArray(d.subgroups)) {
-      g.subgroups = d.subgroups.filter(x => x && x.id).map(x => ({
-        id: String(x.id), name: String(x.name || humanizeId(x.id)), template: String(x.template || 'item'),
+      const builtinSubs = GROUPS.find(x => x.id === g.id)?.subgroups || [];
+      const seen = new Set();
+      g.subgroups = d.subgroups.filter(x => x && x.id && !seen.has(String(x.id)) && seen.add(String(x.id))).map(x => ({
+        id: String(x.id),
+        name: String(x.name || '').trim() || humanizeId(x.id),
+        template: String(x.template || 'item'),
         icon: String(x.icon || g.subgroups.find(old => old.id === x.id)?.icon || g.icon || 'book'),
+        builtin: builtinSubs.some(b => b.id === x.id),
+        hidden: !!x.hidden,
       }));
     }
   }
-  return out.filter(g => !g.hidden).sort((a, b) => a.order - b.order);
+  return out.sort((a, b) => a.order - b.order);
 }

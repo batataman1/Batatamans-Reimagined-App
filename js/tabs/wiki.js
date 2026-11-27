@@ -44,6 +44,11 @@ export const wikiTab = {
         if (depth > 0 && cameFrom === `p/${id}`) history.back();
         else location.replace(`#/wiki/p/${id}`);
       },
+      /** Done in Customize: back to where you came from, or to `fallback`. */
+      finishCustom(fallback) {
+        if (depth > 0) history.back();
+        else location.replace(`#/wiki${fallback ? `/${fallback}` : ''}`);
+      },
     };
 
     async function show({ keepScroll = false } = {}) {
@@ -83,8 +88,9 @@ export const wikiTab = {
 
     // Redraw when something changes on this device (import, pull, edits).
     let timer = null;
-    // The editor keeps its own screen; redrawing it would interrupt typing.
-    const editing = () => parseWikiPath(current).view === 'edit';
+    // The editors (pages, groups, templates) keep their own screen; redrawing would interrupt typing.
+    const EDITORS = new Set(['edit', 'cgroup', 'ctemplate']);
+    const editing = () => EDITORS.has(parseWikiPath(current).view);
     const off = store.on(d => {
       if (d?.type === 'connection' || editing()) return;
       clearTimeout(timer);
