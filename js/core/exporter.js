@@ -7,6 +7,7 @@ import { getTasks } from '../tasks/model.js';
 const TYPE = { task: 'Task', bug: 'Bug' };
 const PRIORITY = { critical: 'Critical', high: 'High', normal: 'Normal', low: 'Low' };
 const STATUS = { todo: 'To do', doing: 'In progress', done: 'Done' };
+const DIFFICULTY = { quick: 'Quick', small: 'Small', medium: 'Medium', big: 'Big' };
 const ORDER = { critical: 0, high: 1, normal: 2, low: 3 };
 
 export async function tasksAsText() {
@@ -30,6 +31,7 @@ export async function tasksAsText() {
       PRIORITY[t.priority] || 'Normal',
       STATUS[t.status] || 'To do',
       t.title || '(untitled)',
+      DIFFICULTY[t.difficulty] ? `difficulty: ${DIFFICULTY[t.difficulty]}` : '',
       folder ? `folder: ${folder}` : '',
       links ? `links: ${links}` : '',
     ].filter(Boolean).join(' | '));

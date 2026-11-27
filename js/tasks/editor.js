@@ -14,7 +14,7 @@ import { pageItems } from '../wiki/richtext.js';
 import { openPopup, currentPopup, closePopup } from '../wiki/popup.js';
 import { blockEditor } from '../wiki/blocks.js';
 import { saveImage, filesOfPage } from '../wiki/images.js';
-import { TYPES, PRIORITIES, STATUSES } from './model.js';
+import { TYPES, PRIORITIES, STATUSES, DIFFICULTIES, DIFFICULTY_HINTS } from './model.js';
 import { folderSelect, confirmDeleteTask, removeTaskAndFiles } from './actions.js';
 
 const APP_TITLE = "Batataman's Reimagined";
@@ -148,6 +148,9 @@ export function taskEditorView(el, model, wiki, ui, id) {
     return h('div', { class: 'tk-basics' },
       h('div', { class: 'field' }, h('span', { class: 'field-label', text: 'Kind' }), typeHost),
       field('Priority', select('Priority', PRIORITIES, draft.priority, v => { draft.priority = v; changed(); })),
+      field('Difficulty', select('Difficulty',
+        { '': 'Not set', ...Object.fromEntries(Object.entries(DIFFICULTIES).map(([k, v]) => [k, `${v} (${DIFFICULTY_HINTS[k]})`])) },
+        draft.difficulty || '', v => { draft.difficulty = v || null; changed(); })),
       field('Status', select('Status', STATUSES, draft.status, setStatus)),
       field('Folder', folder));
   }
@@ -253,5 +256,6 @@ function cleaned(d) {
   if (!out.links.length) delete out.links;
   if (!Array.isArray(out.body) || !out.body.length) delete out.body;
   if (!out.folder) out.folder = null;
+  if (!out.difficulty) delete out.difficulty;
   return out;
 }

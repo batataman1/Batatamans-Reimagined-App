@@ -13,12 +13,13 @@ const scrollByPath = new Map();
 let active = null;
 
 function loadPrefs() {
-  const p = { view: 'list', type: 'all', priorities: [], quickType: 'task' };
+  const p = { view: 'list', type: 'all', priorities: [], quickType: 'task', sort: 'priority' };
   try { Object.assign(p, JSON.parse(localStorage.getItem(PREFS) || '{}')); } catch { /* ignore */ }
   if (!['list', 'board'].includes(p.view)) p.view = 'list';
   if (!['all', 'task', 'bug'].includes(p.type)) p.type = 'all';
   if (!Array.isArray(p.priorities)) p.priorities = [];
   if (!['task', 'bug'].includes(p.quickType)) p.quickType = 'task';
+  if (!['priority', 'difficulty'].includes(p.sort)) p.sort = 'priority';
   return p;
 }
 

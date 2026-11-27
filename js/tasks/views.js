@@ -18,7 +18,7 @@ import { topNav } from '../wiki/parts.js';
 import { nameFor } from '../wiki/text.js';
 import { orderBetween } from '../wiki/custom.js';
 import { crossTabClick } from '../ui/nav.js';
-import { TYPES, PRIORITIES, STATUSES, byPriority, byDone, filterTasks, updateTask, createTask, newFolderId } from './model.js';
+import { TYPES, PRIORITIES, STATUSES, DIFFICULTIES, DIFFICULTY_HINTS, byPriority, byDifficulty, byDone, filterTasks, updateTask, createTask, newFolderId } from './model.js';
 import { taskEditorView } from './editor.js';
 import { removeTaskAndFiles, confirmDeleteTask, folderSelect } from './actions.js';
 
@@ -48,11 +48,54 @@ function folderTitle(model, key) {
   return model.folder(key)?.name || 'Folder';
 }
 
+/** A pill showing the priority; tapping it changes the priority right there. */
+function priorityPill(t) {
+  const d = t.data;
+  const btn = h('button', {
+    type: 'button', class: `tag tag-btn tag-pri tag-pri-${d.priority}`, title: 'Change the priority',
+    'aria-label': `Priority ${PRIORITIES[d.priority]}. Change it`,
+    onclick: e => {
+      e.preventDefault(); e.stopPropagation();
+      openPopup({
+        rect: btn.getBoundingClientRect(), title: 'Priority',
+        items: Object.entries(PRIORITIES).map(([p, label]) => ({
+          label, hint: p === d.priority ? '✓' : '', onPick: () => { if (p !== d.priority) updateTask(t.id, { priority: p }); },
+        })),
+      });
+    },
+  }, PRIORITIES[d.priority]);
+  return btn;
+}
+
+/** A pill showing the difficulty (or "Difficulty?" when not set); tapping it changes it. */
+function difficultyPill(t) {
+  const d = t.data;
+  const btn = h('button', {
+    type: 'button', class: `tag tag-btn tag-diff${d.difficulty ? ` tag-diff-${d.difficulty}` : ' tag-diff-none'}`, title: 'Change the difficulty',
+    'aria-label': `Difficulty ${d.difficulty ? DIFFICULTIES[d.difficulty] : 'not set'}. Change it`,
+    onclick: e => {
+      e.preventDefault(); e.stopPropagation();
+      openPopup({
+        rect: btn.getBoundingClientRect(), title: 'Difficulty',
+        items: [
+          ...Object.entries(DIFFICULTIES).map(([v, label]) => ({
+            label: `${label}${v === d.difficulty ? ' ✓' : ''}`, hint: DIFFICULTY_HINTS[v],
+            onPick: () => { if (v !== d.difficulty) updateTask(t.id, { difficulty: v }); },
+          })),
+          d.difficulty ? { label: 'Not set', onPick: () => updateTask(t.id, { difficulty: null }) } : null,
+        ].filter(Boolean),
+      });
+    },
+  }, d.difficulty ? DIFFICULTIES[d.difficulty] : 'Difficulty?');
+  return btn;
+}
+
 function tags(t, { showStatus = true } = {}) {
   const d = t.data;
   return [
     d.type === 'bug' ? h('span', { class: 'tag tag-bug' }, icon('bug', { size: 12 }), 'Bug') : null,
-    d.priority !== 'normal' ? h('span', { class: `tag tag-pri tag-pri-${d.priority}`, text: PRIORITIES[d.priority] }) : null,
+    priorityPill(t),
+    difficultyPill(t),
     showStatus && d.status === 'doing' ? h('span', { class: 'tag tag-doing', text: 'In progress' }) : null,
     t.dirty ? h('span', { class: 'tag tag-dirty', text: 'Not pushed' }) : null,
   ];
@@ -123,8 +166,8 @@ function taskItem(t, model, wiki, ui, key) {
   const links = linkNames(t, wiki);
   return h('li', { class: `tk-item tk-pri-${t.data.priority} tk-${t.data.status}`, dataset: { task: t.id } },
     tick(t),
-    h('a', { class: 'tk-row', href: `#/tasks/t/${t.id}` },
-      h('span', { class: 'tk-row-head' }, h('span', { class: 'tk-title', text: t.data.title || '(no title)' }), tags(t)),
+    h('div', { class: 'tk-row' },
+      h('span', { class: 'tk-row-head' }, h('a', { class: 'tk-title tk-open', href: `#/tasks/t/${t.id}`, text: t.data.title || '(no title)' }), tags(t)),
       where || links ? h('span', { class: 'tk-row-sub' },
         where ? h('span', { class: 'tk-where' }, icon('tasks', { size: 12 }), where) : null,
         links ? h('span', { class: 'tk-links' }, icon('book', { size: 12 }), links) : null) : null),
@@ -133,10 +176,10 @@ function taskItem(t, model, wiki, ui, key) {
 
 /** A task in the "Tasks & bugs" box of a wiki page: tick, title (opens the task), tags. */
 export function linkedTaskItem(t) {
-  const a = h('a', { class: 'tk-row', href: `#/tasks/t/${t.id}` },
-    h('span', { class: 'tk-row-head' }, h('span', { class: 'tk-title', text: t.data.title || '(no title)' }), tags(t)));
+  const a = h('a', { class: 'tk-title tk-open', href: `#/tasks/t/${t.id}`, text: t.data.title || '(no title)' });
   a.addEventListener('click', crossTabClick);
-  return h('li', { class: `tk-item tk-pri-${t.data.priority} tk-${t.data.status}`, dataset: { task: t.id } }, tick(t), a);
+  return h('li', { class: `tk-item tk-pri-${t.data.priority} tk-${t.data.status}`, dataset: { task: t.id } }, tick(t),
+    h('div', { class: 'tk-row' }, h('span', { class: 'tk-row-head' }, a, tags(t))));
 }
 
 /* ---------- Folders ---------- */
@@ -365,6 +408,12 @@ function homeView(el, model, wiki, ui, key) {
       chip('Bugs', prefs.type === 'bug', () => setType('bug'))),
     h('div', { class: 'fchips', role: 'group', 'aria-label': 'Priority' },
       Object.entries(PRIORITIES).map(([p, label]) => chip(label, prefs.priorities.includes(p), () => togglePri(p), `fchip-pri fchip-${p}`))),
+    h('div', { class: 'tk-sort' }, h('span', { class: 'muted small', text: 'Sort:' }),
+      h('div', { class: 'seg', role: 'group', 'aria-label': 'Sort by' },
+        [['priority', 'Priority'], ['difficulty', 'Easiest first']].map(([v, label]) => h('button', {
+          type: 'button', class: 'seg-btn', 'aria-pressed': String(prefs.sort === v),
+          onclick: () => { prefs.sort = v; ui.savePrefs(); drawFilters(); drawContent(); },
+        }, label)))),
     search);
   drawFilters();
 
@@ -411,8 +460,9 @@ function homeView(el, model, wiki, ui, key) {
 }
 
 function list(tasks, model, wiki, ui, key) {
-  const doing = tasks.filter(t => t.data.status === 'doing').sort(byPriority);
-  const todo = tasks.filter(t => t.data.status === 'todo').sort(byPriority);
+  const order = ui.prefs.sort === 'difficulty' ? byDifficulty : byPriority;
+  const doing = tasks.filter(t => t.data.status === 'doing').sort(order);
+  const todo = tasks.filter(t => t.data.status === 'todo').sort(order);
   const done = tasks.filter(t => t.data.status === 'done').sort(byDone);
   const ul = items => h('ul', { class: 'tk-list' }, items.map(t => taskItem(t, model, wiki, ui, key)));
   const doneBox = h('details', { class: 'tk-donebox', open: !!ui.doneOpen }, h('summary', { text: `Done (${done.length})` }), ul(done));
@@ -429,7 +479,7 @@ function list(tasks, model, wiki, ui, key) {
 
 function board(tasks, model, wiki, ui, key) {
   const cols = Object.entries(STATUSES).map(([status, label]) => {
-    const items = tasks.filter(t => t.data.status === status).sort(status === 'done' ? byDone : byPriority);
+    const items = tasks.filter(t => t.data.status === status).sort(status === 'done' ? byDone : ui.prefs.sort === 'difficulty' ? byDifficulty : byPriority);
     return h('section', { class: `tb-col tb-${status}`, dataset: { status }, 'aria-label': label },
       h('h2', { class: 'tb-head' }, label, h('span', { class: 'tb-count', text: String(items.length) })),
       h('div', { class: 'tb-cards' }, items.length
@@ -446,8 +496,8 @@ function card(t, model, wiki, ui, key) {
   const links = linkNames(t, wiki);
   const el = h('article', { class: `tb-card tk-pri-${t.data.priority}`, dataset: { task: t.id } },
     handle,
-    h('a', { class: 'tb-body', href: `#/tasks/t/${t.id}` },
-      h('span', { class: 'tk-title', text: t.data.title || '(no title)' }),
+    h('div', { class: 'tb-body' },
+      h('a', { class: 'tk-title tk-open', href: `#/tasks/t/${t.id}`, text: t.data.title || '(no title)' }),
       h('span', { class: 'tb-tags' }, tags(t, { showStatus: false })),
       where ? h('span', { class: 'tk-where small' }, icon('tasks', { size: 12 }), where) : null,
       links ? h('span', { class: 'tk-links small' }, icon('book', { size: 12 }), links) : null),

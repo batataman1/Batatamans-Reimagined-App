@@ -237,6 +237,34 @@ await A.locator('h1', { hasText: 'All tasks' }).waitFor();
 assert.equal(await A.locator('.fchip', { hasText: /^Tasks$/ }).getAttribute('aria-pressed'), 'true');
 await A.locator('.fchip', { hasText: /^All$/ }).click();
 
+/* ---- Priority and difficulty: tap the pill to change it; sort easiest first ---- */
+await item(A, 'Hippo model').locator('.tag-pri').click();
+await popup(A).waitFor();
+assert.deepEqual(await popup(A).locator('.popup-label').allTextContents(), ['Critical', 'High', 'Normal', 'Low']);
+await popup(A).locator('.popup-item', { hasText: 'Low' }).click();
+await A.waitForFunction(() => document.querySelector('.tk-item[data-task] .tag-pri-low') !== null);
+assert.equal((await taskNamed(A, 'Hippo model')).priority, 'low');
+assert.equal(await A.evaluate(() => location.hash), '#/tasks');          // stayed on the list
+const diff = async (title, pick) => {
+  await item(A, title).locator('.tag-diff').click();
+  await popup(A).waitFor();
+  await popup(A).locator('.popup-item', { hasText: pick }).first().click();
+  await A.waitForFunction(([t, p]) => [...document.querySelectorAll('.tk-item')].some(e => e.textContent.includes(t) && e.querySelector('.tag-diff')?.textContent === p), [title, pick]);
+};
+assert.equal(await item(A, 'Hippo model').locator('.tag-diff').textContent(), 'Difficulty?');
+await diff('Hippo model', 'Quick');
+await diff('Natural spawns for all mobs', 'Big');
+await diff('Ostrich dash cooldown', 'Small');
+assert.equal((await taskNamed(A, 'Hippo model')).difficulty, 'quick');
+assert.deepEqual(await titles(A), ['Natural spawns for all mobs', 'Ostrich egg takes 11 hours to hatch', 'Ostrich dash cooldown', 'Hippo model']);   // by priority (same priority: oldest first)
+await A.locator('.tk-sort .seg-btn', { hasText: 'Easiest first' }).click();
+assert.deepEqual(await titles(A), ['Hippo model', 'Ostrich dash cooldown', 'Natural spawns for all mobs', 'Ostrich egg takes 11 hours to hatch']);
+await A.reload();
+await A.locator('h1', { hasText: 'All tasks' }).waitFor();
+assert.equal(await A.locator('.tk-sort .seg-btn', { hasText: 'Easiest first' }).getAttribute('aria-pressed'), 'true');
+await A.locator('.tk-sort .seg-btn', { hasText: 'Priority' }).click();
+await A.screenshot({ path: SHOTS + 't1b-pills.png' });
+
 /* ---- Board: drag a card to another column ---- */
 await A.locator('.seg-btn', { hasText: 'Board' }).click();
 await A.locator('.tb-col[data-status="doing"]').waitFor();
@@ -256,7 +284,7 @@ await A.locator('.seg-btn', { hasText: 'List' }).click();
 await A.locator('.tk-section h2', { hasText: 'In progress (1)' }).waitFor();
 
 /* ---- The task page ---- */
-await item(A, 'Ostrich egg takes 11 hours to hatch').locator('.tk-row').click();
+await item(A, 'Ostrich egg takes 11 hours to hatch').locator('.tk-open').click();
 await A.locator('.ed-bar', { hasText: 'Editing bug' }).waitFor();
 const egg = await taskNamed(A, 'Ostrich egg takes 11 hours to hatch');
 assert.equal(await A.evaluate(() => location.hash), `#/tasks/t/${egg.id}`);
@@ -332,7 +360,7 @@ assert.deepEqual([t.priority, t.folder, t.links], ['high', mobs.id, [{ collectio
 await A.locator('.wiki-tasks').scrollIntoViewIfNeeded();
 await A.screenshot({ path: SHOTS + 't4-wiki-box.png' });
 // Opening it from the page, then Done, comes back to the page (another tab)
-await A.locator('.wiki-tasks .tk-row', { hasText: 'Loot table' }).click();
+await A.locator('.wiki-tasks .tk-open', { hasText: 'Loot table' }).click();
 await A.locator('.ed-bar').waitFor();
 assert.equal(await A.locator('#tab-tasks').getAttribute('aria-selected'), 'true');
 await A.getByRole('button', { name: 'Done' }).click();
@@ -364,6 +392,7 @@ await expectToast(A, /Copied 4 tasks/);
 const clip = await A.evaluate(() => navigator.clipboard.readText());
 assert.match(clip, /\| Bug \| Critical \| To do \| Ostrich eggs hatch too slowly \| folder: Mobs\/Ostrich \| links: wiki\/ostrich-egg/);
 assert.match(clip, /\| Task \| High \| Done \| Loot table for the termite nest \| folder: Mobs \| links: wiki\/termite-nest/);
+assert.match(clip, /\| Task \| Low \| Done \| Hippo model \| difficulty: Quick \| folder: Mobs/);
 await A.keyboard.press('Escape');
 await A.waitForFunction(() => !document.querySelector('dialog[open]'));
 
@@ -420,7 +449,7 @@ await B.screenshot({ path: SHOTS + 't7-phone-board.png' });
 // The task page on the phone
 await B.locator('.tb-col[data-status="doing"]').evaluate(e => e.scrollIntoView({ inline: 'start', block: 'nearest' }));
 await B.waitForTimeout(500);       // the board snaps to the column
-await card(B, 'Ostrich eggs hatch too slowly').locator('.tb-body').tap();
+await card(B, 'Ostrich eggs hatch too slowly').locator('.tk-open').tap();
 await B.locator('.ed-bar').waitFor();
 assert.equal(await B.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1), false);
 await B.screenshot({ path: SHOTS + 't8-phone-task.png', fullPage: true });

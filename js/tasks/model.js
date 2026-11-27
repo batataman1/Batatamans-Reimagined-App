@@ -4,6 +4,7 @@
 // {
 //   title, type: "task" | "bug", priority: "critical" | "high" | "normal" | "low",
 //   status: "todo" | "doing" | "done",
+//   difficulty: "quick" | "small" | "medium" | "big" (missing = not set yet),
 //   folder: a folder id, or null for "No folder",
 //   links: [{ collection: "wiki" | "ideas", id }],     wiki pages (ideas from part 2c Ideas)
 //   body: [blocks],                                     the description, same blocks as wiki pages
@@ -19,7 +20,11 @@ import { linkTargets, plainText } from '../wiki/text.js';
 export const TYPES = { task: 'Task', bug: 'Bug' };
 export const PRIORITIES = { critical: 'Critical', high: 'High', normal: 'Normal', low: 'Low' };
 export const STATUSES = { todo: 'To do', doing: 'In progress', done: 'Done' };
+/** How much work a task is, easiest first. */
+export const DIFFICULTIES = { quick: 'Quick', small: 'Small', medium: 'Medium', big: 'Big' };
+export const DIFFICULTY_HINTS = { quick: 'a few minutes', small: 'about an hour', medium: 'an evening', big: 'several days' };
 const RANK = { critical: 0, high: 1, normal: 2, low: 3 };
+const EFFORT = { quick: 0, small: 1, medium: 2, big: 3 };
 
 export const newTaskId = () => uid('t');
 export const newFolderId = () => uid('f');
@@ -42,6 +47,7 @@ export function normalizeTask(d) {
     type: TYPES[d.type] ? d.type : 'task',
     priority: PRIORITIES[d.priority] ? d.priority : 'normal',
     status: STATUSES[d.status] ? d.status : 'todo',
+    difficulty: DIFFICULTIES[d.difficulty] ? d.difficulty : null,
     folder: typeof d.folder === 'string' && d.folder ? d.folder : null,
     links: (Array.isArray(d.links) ? d.links : []).filter(l => l && l.collection && l.id).map(l => ({ collection: String(l.collection), id: String(l.id) })),
     body: Array.isArray(d.body) ? d.body : [],
@@ -52,6 +58,8 @@ export const byPriority = (a, b) =>
   RANK[a.data.priority] - RANK[b.data.priority]
   || String(a.data.created || a.updatedAt || '').localeCompare(String(b.data.created || b.updatedAt || ''))
   || a.data.title.localeCompare(b.data.title);
+/** Easiest first (not set last), then by priority. */
+export const byDifficulty = (a, b) => (EFFORT[a.data.difficulty] ?? 4) - (EFFORT[b.data.difficulty] ?? 4) || byPriority(a, b);
 export const byDone = (a, b) => String(b.data.doneAt || b.updatedAt || '').localeCompare(String(a.data.doneAt || a.updatedAt || ''));
 
 async function build() {
@@ -164,10 +172,10 @@ export async function updateTask(id, change, opts) {
 }
 
 /** Make a new task. Returns its id. */
-export async function createTask({ title, type = 'task', priority = 'normal', status = 'todo', folder = null, links = [] }) {
+export async function createTask({ title, type = 'task', priority = 'normal', difficulty = null, status = 'todo', folder = null, links = [] }) {
   const id = newTaskId();
   await store.put('tasks', id, {
-    title: String(title).trim(), type, priority, status, folder: folder || null, links, created: new Date().toISOString(),
+    title: String(title).trim(), type, priority, ...(difficulty ? { difficulty } : {}), status, folder: folder || null, links, created: new Date().toISOString(),
   });
   return id;
 }

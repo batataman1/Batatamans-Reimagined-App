@@ -15,7 +15,7 @@ import { filesOfPage, isFileOfPage, isPicturePath } from '../wiki/images.js';
 import { GROUPS, TEMPLATES } from '../config/wiki.js';
 import { builtinOrder } from '../wiki/custom.js';
 import { PICKABLE_ICONS } from '../config/icons.js';
-import { getTasks, TYPES, PRIORITIES, STATUSES } from '../tasks/model.js';
+import { getTasks, TYPES, PRIORITIES, STATUSES, DIFFICULTIES } from '../tasks/model.js';
 
 const COLLECTION_NAMES = { wiki: 'Wiki page', tasks: 'Task', 'task-folders': 'Task folder', ideas: 'Idea', groups: 'Wiki group', templates: 'Wiki template' };
 // Collections whose items own pictures (images/<id>-…), shown as one entry with them.
@@ -450,6 +450,7 @@ async function taskDiff(a, b) {
     out.push(line('Title', null, b.title || '(no title)'));
     out.push(line('Kind', null, label(TYPES, b.type, 'task')));
     out.push(line('Priority', null, label(PRIORITIES, b.priority, 'normal')));
+    if (b.difficulty) out.push(line('Difficulty', null, DIFFICULTIES[b.difficulty] || b.difficulty));
     out.push(line('Status', null, label(STATUSES, b.status, 'todo')));
     out.push(line('Folder', null, where(b.folder)));
     if (has(b.links)) out.push(line('Links', null, showLinks(b.links)));
@@ -459,6 +460,7 @@ async function taskDiff(a, b) {
   if (!same(a.title, b.title)) out.push(line('Title', a.title, b.title));
   if ((a.type || 'task') !== (b.type || 'task')) out.push(line('Kind', label(TYPES, a.type, 'task'), label(TYPES, b.type, 'task')));
   if ((a.priority || 'normal') !== (b.priority || 'normal')) out.push(line('Priority', label(PRIORITIES, a.priority, 'normal'), label(PRIORITIES, b.priority, 'normal')));
+  if ((a.difficulty || null) !== (b.difficulty || null)) out.push(line('Difficulty', DIFFICULTIES[a.difficulty] || 'Not set', DIFFICULTIES[b.difficulty] || 'Not set'));
   if ((a.status || 'todo') !== (b.status || 'todo')) out.push(line('Status', label(STATUSES, a.status, 'todo'), label(STATUSES, b.status, 'todo')));
   if ((a.folder || null) !== (b.folder || null)) out.push(line('Folder', where(a.folder), where(b.folder)));
   if (!same(a.links, b.links)) out.push(line('Links', showLinks(a.links), showLinks(b.links)));

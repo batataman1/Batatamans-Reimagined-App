@@ -3,7 +3,7 @@
 // changes; the app then offers "Reload" to update.
 // Requests to GitHub's API are never cached here.
 
-const VERSION = '998e39a3a0';
+const VERSION = 'bf63ccde37';
 const CACHE = `brr-app-${VERSION}`;
 const FILES = [
   "./index.html",
