@@ -497,9 +497,11 @@ function homeView(el, ctx, key, mode = 'list') {
     class: 'seg-btn', role: 'button', 'aria-pressed': String(mode === v), href: v === 'map' ? `#/ideas/m/${encodeURIComponent(key)}` : `#/ideas${listPath ? `/${listPath}` : ''}`,
     onclick: e => { e.preventDefault(); if (mode !== v) ui.switchTo(v === 'map' ? `m/${key}` : listPath); },
   }, icon(ic, { size: 14 }), label);
+  const addRow = h('div', { class: 'tk-add' }, addInput,
+    h('button', { type: 'button', class: 'btn btn-primary tk-add-btn', onclick: add, 'aria-label': 'Add' }, icon('plus', { size: 18 }), h('span', { class: 'tk-add-label', text: 'Add' })));
   let screen = null;
   if (mode === 'map') {
-    screen = mapScreen(ctx, key);
+    screen = mapScreen(ctx, key, addRow);   // the add box goes with the map (it stays in full screen)
     clear(content, screen ? screen.el : h('p', { class: 'muted tk-empty', text: 'Nothing here yet. Type an idea above and press Enter.' }));
   } else {
     drawContent();
@@ -515,8 +517,7 @@ function homeView(el, ctx, key, mode = 'list') {
         : null,
       h('div', { class: 'tab-head tk-head' }, h('h1', { text: title }), h('span', { class: 'muted', text: plural(n, 'idea') }),
         h('div', { class: 'seg head-action', role: 'group', 'aria-label': 'View' }, viewBtn('list', 'List', 'tasks'), viewBtn('map', 'Map', 'mindmap'))),
-      h('div', { class: 'tk-add' }, addInput,
-        h('button', { type: 'button', class: 'btn btn-primary tk-add-btn', onclick: add, 'aria-label': 'Add' }, icon('plus', { size: 18 }), h('span', { class: 'tk-add-label', text: 'Add' }))),
+      screen ? null : addRow,
       mode === 'list' ? h('div', { class: 'tk-filters' }, search) : null,
       content)));
   screen?.mounted();

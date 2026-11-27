@@ -13,12 +13,13 @@ import { BUBBLE_SIZES } from './model.js';
 
 /** How big each bubble size draws: text size and widest line (in map units). */
 export const SIZE_STYLE = {
+  xs: { font: 11, width: 110 },
   s: { font: 13, width: 130 },
   m: { font: 15, width: 170 },
   l: { font: 19, width: 220 },
   xl: { font: 25, width: 280 },
 };
-const RADIUS = { s: 50, m: 62, l: 80, xl: 100 };
+const RADIUS = { xs: 42, s: 50, m: 62, l: 80, xl: 100 };
 
 /** The fold id of a node: ideas use their own id, sections "s:<id>" (shared with the list). */
 export const foldId = n => (n.kind === 'idea' ? n.id : n.kind === 'section' ? `s:${n.id}` : n.kind === 'none' ? 's:none' : 'root');

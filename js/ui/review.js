@@ -16,7 +16,7 @@ import { GROUPS, TEMPLATES } from '../config/wiki.js';
 import { builtinOrder } from '../wiki/custom.js';
 import { PICKABLE_ICONS } from '../config/icons.js';
 import { getTasks, TYPES, PRIORITIES, STATUSES, DIFFICULTIES } from '../tasks/model.js';
-import { getIdeas, SIZE_NAMES } from '../ideas/model.js';
+import { getIdeas, SIZE_NAMES, LINE_STYLES, normalizeConnections } from '../ideas/model.js';
 
 const COLLECTION_NAMES = { wiki: 'Wiki page', tasks: 'Task', 'task-folders': 'Task folder', ideas: 'Idea', sections: 'Idea section', groups: 'Wiki group', templates: 'Wiki template' };
 // Collections whose items own pictures (images/<id>-…), shown as one entry with them.
@@ -512,8 +512,11 @@ async function ideaDiff(a, b) {
   if (!same(a.body, b.body)) out.push(bodyDiff(a.body, b.body, txt));
   out.push(...mapLines(a, b, 'm'));
   if (has(a.connections) || has(b.connections)) {
-    const names = ls => (Array.isArray(ls) && ls.length ? ls.map(id => model.get(id)?.data.title || '(a deleted idea)').join(', ') : 'None');
-    if (!same(a.connections || [], b.connections || [])) out.push(line('Connections on the mind map', names(a.connections), names(b.connections)));
+    const names = ls => {
+      const list = normalizeConnections(ls);
+      return list.length ? list.map(c => `${model.get(c.id)?.data.title || '(a deleted idea)'}${c.style === 'dashed' ? '' : ` (${LINE_STYLES[c.style].name.toLowerCase()})`}`).join(', ') : 'None';
+    };
+    if (names(a.connections) !== names(b.connections)) out.push(line('Connections on the mind map', names(a.connections), names(b.connections)));
   }
   if ((a.order ?? null) !== (b.order ?? null) && (a.parent || null) === (b.parent || null) && (a.section || null) === (b.section || null)) {
     out.push(line('Place in the list', null, 'moved'));

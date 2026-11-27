@@ -22,8 +22,9 @@ import { icon } from '../ui/icons.js';
 import { confirmDialog, errorDialog, toast } from '../ui/dialogs.js';
 import { openPopup, closePopup } from '../wiki/popup.js';
 import { nameDialog } from '../tasks/views.js';
-import { createIdea, storableIdea, SIZE_NAMES } from './model.js';
-import { worldTree, centerOf, placeAll, tidyLayout, freeSpot, branchNodes, foldId, nextSize, radiusOf, SIZE_STYLE } from './layout.js';
+import { createIdea, storableIdea, SIZE_NAMES, BUBBLE_SIZES, LINE_STYLES } from './model.js';
+import { worldTree, centerOf, placeAll, tidyLayout, freeSpot, branchNodes, foldId, radiusOf, SIZE_STYLE } from './layout.js';
+import { openModal } from '../ui/dialogs.js';
 import { confirmDeleteIdea, removeIdea, makeTaskDialog, moveIdeaTo } from './actions.js';
 
 const SVG = 'http://www.w3.org/2000/svg';
@@ -37,14 +38,14 @@ const LONG_PRESS = 500;
 
 /** Map state kept while the Ideas tab is open (not saved). */
 export function mapState() {
-  return { key: null, selected: new Set(), selectMode: false, pending: null, last: null, undo: [] };
+  return { key: null, selected: new Set(), selectMode: false, pending: null, last: null, undo: [], full: false, browserFull: false };
 }
 
 /**
  * Builds the map for `key` ("all", "none" or a section id). Returns { el, mounted, cleanup }:
  * call mounted() once el is on the page (it sizes the map and fits it the first time).
  */
-export function mapScreen(ctx, key) {
+export function mapScreen(ctx, key, addRow = null) {
   const { model, tasks, ui } = ctx;
   const st = ui.mm;
   if (st.key !== key) Object.assign(st, { key, selected: new Set(), selectMode: false, pending: null, last: null });
@@ -79,10 +80,12 @@ export function mapScreen(ctx, key) {
   const lines = svg('svg', { class: 'mm-lines', width: 1, height: 1, 'aria-hidden': 'true' });
   const worldEl = h('div', { class: 'mm-world' }, lines);
   const bubbles = new Map();
-  const viewport = h('div', { class: 'mm-view', role: 'application', 'aria-label': 'Mind map' }, worldEl);
+  // Select mode / "tap a bubble" bar: it takes the place of the buttons above the map, so it's
+  // always in view and never covers bubbles.
   const barHost = h('div', { class: 'mm-bar-host' });
+  const viewport = h('div', { class: 'mm-view', role: 'application', 'aria-label': 'Mind map' }, worldEl);
   const tools = h('div', { class: 'mm-tools' });
-  const el = h('div', { class: 'mm' }, tools, viewport, barHost);
+  const el = h('div', { class: 'mm' }, addRow, tools, barHost, viewport);
 
   const tasksOf = n => (n.kind === 'idea' ? tasks.linkedTo('ideas', n.id) : []);
 
@@ -116,6 +119,11 @@ export function mapScreen(ctx, key) {
 
   function drawLines() {
     clear(lines);
+    lines.append(svg('defs', {}));
+    const defs = lines.firstChild;
+    const arrowHead = svg('marker', { id: 'mm-arrow', viewBox: '0 0 10 10', refX: 8, refY: 5, markerWidth: 6, markerHeight: 6, orient: 'auto-start-reverse' });
+    arrowHead.append(svg('path', { d: 'M0,0 L10,5 L0,10 z', class: 'mm-arrow-head' }));
+    defs.append(arrowHead);
     for (const n of visible) {
       if (n === center || !n.parent || !shown.has(n.parent.key)) continue;
       const a = pos.get(n.parent.key), b = pos.get(n.key);
@@ -124,13 +132,27 @@ export function mapScreen(ctx, key) {
     for (const n of visible) {
       if (n.kind !== 'idea') continue;
       for (const c of n.idea.data.connections) {
-        const other = world.get(`i:${c}`);
+        const other = world.get(`i:${c.id}`);
         if (!other || !shown.has(other.key)) continue;
-        const a = pos.get(n.key), b = pos.get(other.key);
+        const style = LINE_STYLES[c.style] || LINE_STYLES.dashed;
+        const a = pos.get(n.key);
+        let b = pos.get(other.key);
         const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
         const bend = 0.18;
         const cx = mx - (b.y - a.y) * bend, cy = my + (b.x - a.x) * bend;
-        lines.append(svg('path', { class: 'mm-link', d: `M${a.x},${a.y} Q${cx},${cy} ${b.x},${b.y}` }));
+        if (style.arrow) {
+          // Stop at the edge of the bubble it points to, so the arrowhead shows.
+          const len = Math.hypot(b.x - cx, b.y - cy) || 1;
+          const back = Math.min(len * 0.45, radiusOf(other) * 0.7 + 8);
+          b = { x: b.x - ((b.x - cx) / len) * back, y: b.y - ((b.y - cy) / len) * back };
+        }
+        const d = `M${a.x},${a.y} Q${cx},${cy} ${b.x},${b.y}`;
+        const path = svg('path', { class: `mm-link mm-link-${c.style}${style.dots ? ' dots' : ''}`, d });
+        if (style.dash) path.setAttribute('stroke-dasharray', style.dash);
+        if (style.arrow) path.setAttribute('marker-end', 'url(#mm-arrow)');
+        lines.append(path);
+        // A wide invisible copy you can tap to change the line.
+        lines.append(svg('path', { class: 'mm-link-hit', d, 'data-from': n.id, 'data-to': c.id }));
       }
     }
   }
@@ -163,9 +185,10 @@ export function mapScreen(ctx, key) {
   /* ---------- The bars: tools on top, select mode / "tap a bubble" at the bottom ---------- */
 
   const tool = (label, ic, onclick, opts = {}) => h('button', {
-    type: 'button', class: `btn btn-small mm-tool${opts.text ? '' : ' mm-tool-icon'}`, 'aria-label': label, title: label, onclick, disabled: opts.disabled || null,
+    type: 'button', class: `btn btn-small mm-tool${ic ? ' mm-tool-icon' : ''}`, 'aria-label': label, title: label, onclick, disabled: opts.disabled || null,
   }, ic ? icon(ic, { size: 16 }) : null, opts.text ? h('span', { text: opts.text }) : null);
 
+  let sized = false;
   function drawBars() {
     for (const [k, b] of bubbles) {
       b.classList.toggle('is-sel', st.selected.has(k));
@@ -178,7 +201,8 @@ export function mapScreen(ctx, key) {
       h('span', { class: 'mm-tools-gap' }),
       tool('Zoom out', null, () => zoomMiddle(1 / 1.25), { text: '−' }),
       tool('Zoom in', null, () => zoomMiddle(1.25), { text: '+' }),
-      tool('Fit the whole map', 'fit', fit, { text: 'Fit' }));
+      tool('Fit the whole map', 'fit', fit, { text: 'Fit' }),
+      tool(st.full ? 'Leave full screen' : 'Full screen', st.full ? 'close' : 'fullscreen', toggleFull, { text: st.full ? 'Exit' : 'Full screen' }));
     if (st.pending) {
       const from = world.get(st.pending.key);
       clear(barHost, h('div', { class: 'mm-bar', role: 'status' },
@@ -198,6 +222,8 @@ export function mapScreen(ctx, key) {
     } else {
       clear(barHost);
     }
+    tools.hidden = !!barHost.firstChild;
+    if (sized) size();
   }
   drawBars();
 
@@ -301,10 +327,11 @@ export function mapScreen(ctx, key) {
       else await writeSection(n.id, { size });
     } catch (err) { errorDialog(err, "The size couldn't be saved"); }
   }
+  const hasLink = (i, id) => i.data.connections.some(c => c.id === id);
   function connectionsOf(n) {
-    const out = n.idea.data.connections.filter(c => model.get(c)).map(c => ({ from: n.id, to: c, other: c }));
+    const out = n.idea.data.connections.filter(c => model.get(c.id)).map(c => ({ from: n.id, to: c.id, other: c.id }));
     for (const i of model.ideas.values()) {
-      if (i.id !== n.id && i.data.connections.includes(n.id)) out.push({ from: i.id, to: n.id, other: i.id });
+      if (i.id !== n.id && hasLink(i, n.id)) out.push({ from: i.id, to: n.id, other: i.id });
     }
     return out;
   }
@@ -312,20 +339,70 @@ export function mapScreen(ctx, key) {
     const from = world.get(`i:${c.from}`);
     try {
       remember('Remove a connection', await snapshot([from]));
-      await writeIdea(c.from, { connections: from.idea.data.connections.filter(x => x !== c.to) });
+      await writeIdea(c.from, { connections: from.idea.data.connections.filter(x => x.id !== c.to) });
       toast('Connection removed.');
     } catch (err) { errorDialog(err, "The connection couldn't be removed"); }
+  }
+  async function setLineStyle(c, style) {
+    const from = world.get(`i:${c.from}`);
+    try {
+      remember('Line style', await snapshot([from]));
+      await writeIdea(c.from, { connections: from.idea.data.connections.map(x => (x.id === c.to ? { id: x.id, style } : x)) });
+    } catch (err) { errorDialog(err, "The line couldn't be changed"); }
+  }
+  async function turnAround(c) {
+    const from = world.get(`i:${c.from}`), to = world.get(`i:${c.to}`);
+    const style = from.idea.data.connections.find(x => x.id === c.to)?.style || 'arrow';
+    try {
+      remember('Turn the arrow around', await snapshot([from, to]));
+      await writeIdea(c.from, { connections: from.idea.data.connections.filter(x => x.id !== c.to) });
+      await writeIdea(c.to, { connections: [...to.idea.data.connections.filter(x => x.id !== c.from), { id: c.from, style }] });
+    } catch (err) { errorDialog(err, "The arrow couldn't be turned around"); }
+  }
+  /** Tapping a connection line: pick one of the line styles, turn an arrow around, or remove it. */
+  function lineDialog(fromId, toId) {
+    const from = world.get(`i:${fromId}`), to = world.get(`i:${toId}`);
+    if (!from || !to) return;
+    const c = { from: fromId, to: toId };
+    const now = from.idea.data.connections.find(x => x.id === toId)?.style || 'dashed';
+    const swatch = st => {
+      const style = LINE_STYLES[st];
+      const s2 = svg('svg', { class: 'mm-swatch', width: 96, height: 16, viewBox: '0 0 96 16', 'aria-hidden': 'true' });
+      const p = svg('path', { class: `mm-link${style.dots ? ' dots' : ''}`, d: style.arrow ? 'M4,8 L84,8' : 'M4,8 L92,8' });
+      if (style.dash) p.setAttribute('stroke-dasharray', style.dash);
+      s2.append(p);
+      if (style.arrow) s2.append(svg('path', { class: 'mm-arrow-head', d: 'M82,3 L92,8 L82,13 z' }));
+      return s2;
+    };
+    const m = openModal({
+      title: 'Connection',
+      body: [
+        h('p', { class: 'muted small', text: `${from.label}  →  ${to.label}` }),
+        h('div', { class: 'mm-styles', role: 'group', 'aria-label': 'Line style' }, Object.entries(LINE_STYLES).map(([k, v]) => h('button', {
+          type: 'button', class: 'mm-style', 'aria-pressed': String(k === now), dataset: { style: k },
+          onclick: () => { m.close('style'); if (k !== now) setLineStyle(c, k); },
+        }, swatch(k), h('span', { text: v.name })))),
+        now === 'arrow' ? h('button', { type: 'button', class: 'btn btn-small', onclick: () => { m.close('turn'); turnAround(c); } }, 'Turn the arrow around') : null,
+      ],
+      actions: [
+        { id: 'remove', label: 'Remove this connection', kind: 'danger-outline', onClick: close => { close('remove'); removeConnection(c); } },
+        { id: 'cancel', label: 'Close', kind: 'quiet' },
+      ],
+    });
   }
 
   function bubbleMenu(n, anchor) {
     const rect = anchor.getBoundingClientRect();
     const canFold = n !== center && n.children.length > 0;
     const folded = canFold && ui.isFolded(foldId(n));
-    const sizeItems = [
-      n.size !== 'xl' ? { label: 'Bigger', icon: 'plus', hint: SIZE_NAMES[nextSize(n.size, 1)], onPick: () => setSize(n, nextSize(n.size, 1)) } : null,
-      n.size !== 's' ? { label: 'Smaller', hint: SIZE_NAMES[nextSize(n.size, -1)], onPick: () => setSize(n, nextSize(n.size, -1)) } : null,
-    ];
-    const foldItem = canFold ? { label: folded ? 'Unfold' : 'Fold', hint: folded ? `${plural(branchNodes(n).length - 1, 'bubble')}` : null, onPick: () => ui.toggleFold(foldId(n)) } : null;
+    const sizeItems = [{
+      label: 'Size', icon: 'sliders', hint: SIZE_NAMES[n.size || 'm'],
+      onPick: () => openPopup({
+        rect, title: 'Size',
+        items: BUBBLE_SIZES.map(z => ({ label: SIZE_NAMES[z], icon: z === n.size ? 'eye' : null, hint: z === n.size ? 'now' : null, onPick: () => { if (z !== n.size) setSize(n, z); } })),
+      }),
+    }];
+    const foldItem = canFold ? { label: folded ? 'Unfold' : 'Fold', icon: 'eye', hint: folded ? `${plural(branchNodes(n).length - 1, 'bubble')}` : null, onPick: () => ui.toggleFold(foldId(n)) } : null;
     let items;
     if (n.kind === 'idea') {
       const conns = connectionsOf(n);
@@ -375,14 +452,14 @@ export function mapScreen(ctx, key) {
     if (!from) { st.pending = null; drawBars(); return; }
     if (p.kind === 'connect') {
       if (n.kind !== 'idea' || n === from) { toast('Tap another idea.'); return; }
-      const joined = from.parent === n || n.parent === from
-        || from.idea.data.connections.includes(n.id) || n.idea.data.connections.includes(from.id);
+      const joined = from.parent === n || n.parent === from || hasLink(from.idea, n.id) || hasLink(n.idea, from.id);
       st.pending = null;
       drawBars();
       if (joined) { toast('They are already joined by a line.'); return; }
       try {
         remember('Draw a connection', await snapshot([from]));
-        await writeIdea(from.id, { connections: [...from.idea.data.connections, n.id] });
+        await writeIdea(from.id, { connections: [...from.idea.data.connections, { id: n.id, style: 'dashed' }] });
+        toast('Connected. Tap the line to change how it looks.');
       } catch (err) { errorDialog(err, "The connection couldn't be saved"); }
       return;
     }
@@ -411,6 +488,8 @@ export function mapScreen(ctx, key) {
     if (n.kind === 'root') { if (!st.selectMode) { st.selected.clear(); drawBars(); } return; }
     if (st.selectMode || add) {
       if (st.selected.has(n.key)) st.selected.delete(n.key); else st.selected.add(n.key);
+    } else if (st.selected.size === 1 && st.selected.has(n.key)) {
+      st.selected = new Set();          // tapping the selected bubble again lets go of it
     } else {
       st.selected = new Set([n.key]);
     }
@@ -460,7 +539,10 @@ export function mapScreen(ctx, key) {
     const p = local(e);
     const b = e.target.closest('.mm-b');
     const n = b && world.get(b.dataset.key);
-    if (n && n.kind !== 'root') {
+    const hit = e.target.closest?.('.mm-link-hit');
+    if (hit && !n) {
+      g = { kind: 'pan', x0: p.x, y0: p.y, v0: { ...view }, moved: false, link: { from: hit.dataset.from, to: hit.dataset.to } };
+    } else if (n && n.kind !== 'root') {
       g = { kind: 'bubble', key: n.key, x0: p.x, y0: p.y, moved: false, long: false, add: e.shiftKey || e.ctrlKey || e.metaKey };
       const mine = g;
       g.timer = setTimeout(() => longPress(mine), LONG_PRESS);
@@ -518,7 +600,8 @@ export function mapScreen(ctx, key) {
     if (gesture.kind === 'pan') {
       if (gesture.moved) keepView();
       else if (e.type !== 'pointercancel') {
-        if (gesture.root) tap(gesture.root, false);
+        if (gesture.link && !st.pending) lineDialog(gesture.link.from, gesture.link.to);
+        else if (gesture.root) tap(gesture.root, false);
         else if (!st.selectMode && !st.pending && st.selected.size) { st.selected.clear(); drawBars(); }
       }
       return;
@@ -546,11 +629,58 @@ export function mapScreen(ctx, key) {
     if (e.key !== 'Escape' || document.querySelector('dialog[open], .popup')) return;
     if (st.pending) { st.pending = null; drawBars(); }
     else if (st.selectMode || st.selected.size) { st.selectMode = false; st.selected.clear(); drawBars(); }
+    else if (st.full) toggleFull();
   };
   document.addEventListener('keydown', onKey);
 
+  // Pressing anywhere outside the map (not its buttons, menus or dialogs) lets go of the
+  // selection and leaves select mode or a "tap a bubble" step.
+  const onOutside = e => {
+    if (viewport.contains(e.target) || e.target.closest?.('.mm-tools, .mm-bar-host, .popup, dialog, .toasts')) return;
+    if (st.selected.size || st.selectMode || st.pending) {
+      st.selected.clear(); st.selectMode = false; st.pending = null;
+      drawBars();
+    }
+  };
+  document.addEventListener('pointerdown', onOutside, true);
+
+  /* ---------- Full screen: only the map and its buttons ---------- */
+
+  function applyFull() {
+    document.body.classList.toggle('mm-full', !!st.full);
+  }
+  function toggleFull() {
+    const r0 = viewport.getBoundingClientRect();
+    st.full = !st.full;
+    applyFull();
+    if (st.full) {
+      // Also hide the phone's/browser's bars when the browser allows it.
+      document.documentElement.requestFullscreen?.().then(() => { st.browserFull = true; }).catch(() => {});
+    } else if (document.fullscreenElement) {
+      st.browserFull = false;
+      document.exitFullscreen?.().catch(() => {});
+    }
+    drawBars();
+    requestAnimationFrame(() => {
+      size();
+      const r1 = viewport.getBoundingClientRect();      // keep the same middle
+      view = { ...view, tx: view.tx + (r1.width - r0.width) / 2, ty: view.ty + (r1.height - r0.height) / 2 };
+      applyView();
+      keepView();
+    });
+  }
+  const onFullChange = () => {
+    if (!document.fullscreenElement && st.browserFull) {
+      st.browserFull = false;
+      if (st.full) toggleFull();             // the back gesture / Esc left the browser's full screen
+    }
+    setTimeout(size, 50);
+  };
+  document.addEventListener('fullscreenchange', onFullChange);
+
   /* The map fills the screen down to the bottom (above the phone's tab bar). */
   function size() {
+    if (st.full) { viewport.style.height = ''; return; }   // full screen: the map takes what's left
     const r = viewport.getBoundingClientRect();
     const tabs = document.querySelector('.tabs');
     const below = tabs && getComputedStyle(tabs).position === 'fixed' ? tabs.getBoundingClientRect().height : 0;
@@ -562,6 +692,8 @@ export function mapScreen(ctx, key) {
   return {
     el,
     mounted() {
+      applyFull();
+      sized = true;
       size();
       if (view) applyView(); else fit();
     },
@@ -570,6 +702,9 @@ export function mapScreen(ctx, key) {
       if (view && !forgetView) { ui.prefs.mapViews[key] = { ...view }; ui.savePrefs(); }
       removeEventListener('resize', onResize);
       ui.mmBusy = false;
+      document.removeEventListener('pointerdown', onOutside, true);
+      document.removeEventListener('fullscreenchange', onFullChange);
+      document.body.classList.remove('mm-full');   // drawn again by the next map if it stays full
       document.removeEventListener('keydown', onKey);
       closePopup();
     },

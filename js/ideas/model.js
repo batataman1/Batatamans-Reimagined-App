@@ -10,8 +10,9 @@
 //   created: ISO time                              used for sorting, never shown
 //   order: number (optional)                       place among its siblings after a drag
 //   map: { x, y } (optional)                       its place on the mind map (missing = placed automatically)
-//   size: "s" | "l" | "xl" (optional)              its bubble size (missing = normal)
-//   connections: [idea ids] (optional)             dashed lines on the mind map to other ideas
+//   size: "xs" | "s" | "l" | "xl" (optional)       its bubble size (missing = normal)
+//   connections: [{ id, style }] (optional)        lines on the mind map to other ideas (style: LINE_STYLES;
+//                                                  an id alone, as v0.7.0 saved them, is a dashed line)
 // }
 // Siblings are sorted by `order`; an idea without one counts as the time it was made (in ms),
 // so new ideas come last and a dragged idea gets a number between its new neighbours.
@@ -50,8 +51,32 @@ export function normalizeIdea(d) {
     body: Array.isArray(d.body) ? d.body : [],
     map: mapPoint(d.map),
     size: BUBBLE_SIZES.includes(d.size) ? d.size : 'm',
-    connections: [...new Set((Array.isArray(d.connections) ? d.connections : []).filter(c => typeof c === 'string' && c))],
+    connections: normalizeConnections(d.connections),
   };
+}
+
+/** Line styles for connections on the mind map (dash = SVG stroke-dasharray). */
+export const LINE_STYLES = {
+  dashed: { name: 'Dashed', dash: '8 6' },
+  dotted: { name: 'Dotted', dash: '0.1 8', dots: true },
+  dashdot: { name: 'Dash-dot', dash: '14 6 0.1 6', dots: true },
+  dashdotdot: { name: 'Dash-dot-dot', dash: '14 6 0.1 6 0.1 6', dots: true },
+  long: { name: 'Long dash', dash: '24 9' },
+  solid: { name: 'Solid', dash: '' },
+  arrow: { name: 'Arrow', dash: '', arrow: true },
+};
+
+/** [{ id, style }] from what's saved (plain ids from v0.7.0 count as dashed); one per idea. */
+export function normalizeConnections(list) {
+  const out = [];
+  const seen = new Set();
+  for (const c of Array.isArray(list) ? list : []) {
+    const id = typeof c === 'string' ? c : c && typeof c.id === 'string' ? c.id : '';
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    out.push({ id, style: LINE_STYLES[c?.style] ? c.style : 'dashed' });
+  }
+  return out;
 }
 
 /** An idea's data ready to save: defaults (normal size, no map place, no connections) left out. */
@@ -64,8 +89,8 @@ export function storableIdea(d) {
 }
 
 /** Bubble sizes on the mind map, smallest first ("m" = normal, never saved). */
-export const BUBBLE_SIZES = ['s', 'm', 'l', 'xl'];
-export const SIZE_NAMES = { s: 'Small', m: 'Normal', l: 'Big', xl: 'Huge' };
+export const BUBBLE_SIZES = ['xs', 's', 'm', 'l', 'xl'];
+export const SIZE_NAMES = { xs: 'Tiny', s: 'Small', m: 'Normal', l: 'Big', xl: 'Huge' };
 
 /** A saved place on the mind map, or null. */
 export function mapPoint(p) {

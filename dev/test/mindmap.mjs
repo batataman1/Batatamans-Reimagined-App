@@ -165,6 +165,14 @@ async function holdBubble(page, label) {
   await page.mouse.up();
 }
 const mapCount = page => page.locator('.mm-b').count();
+async function clickLine(page) {
+  const p = await page.locator('.mm-link-hit').first().evaluate(el => {
+    const q = el.getPointAtLength(el.getTotalLength() / 2), m = el.getScreenCTM();
+    return { x: q.x * m.a + q.y * m.c + m.e, y: q.x * m.b + q.y * m.d + m.f };
+  });
+  await page.mouse.click(p.x, p.y);
+  await dlg(page).locator('.mm-styles').waitFor();
+}
 const idea = async (page, title) => (await list(page, 'ideas')).find(i => i.title === title) || null;
 const near = (a, b, d = 2) => Math.abs(a - b) <= d;
 
@@ -259,20 +267,47 @@ assert.equal(await A.locator('.mm-b.is-sel').count(), 2);
 // Tapping empty space clears it
 await A.mouse.click(vb.x + 20, vb.y + 60);
 await A.waitForFunction(() => !document.querySelector('.mm-b.is-sel'));
+// Tapping the selected bubble again lets go of it
+await tapBubble(A, 'Termites');
+await A.locator('.mm-b.is-sel').waitFor();
+await tapBubble(A, 'Termites');
+await A.waitForFunction(() => !document.querySelector('.mm-b.is-sel'));
+// The select-mode bar sits on top of the map; pressing outside the map leaves select mode
+await holdBubble(A, 'Termites');
+await A.locator('.mm-bar', { hasText: '1 bubble selected' }).waitFor();
+const barBox = await A.locator('.mm-bar').boundingBox();
+const viewNow = await A.locator('.mm-view').boundingBox();
+assert.ok(barBox.y + barBox.height <= viewNow.y + 1 && viewNow.y - barBox.y < 80, 'the bar is right above the map');
+assert.equal(await A.locator('.mm-tools').isVisible(), false, 'it takes the place of the buttons');
+await A.locator('h1').click();
+await A.waitForFunction(() => !document.querySelector('.mm-bar') && !document.querySelector('.mm-b.is-sel'));
+await tapBubble(A, 'Termites');
+assert.equal(await A.locator('.mm-bar').count(), 0, 'back to selecting one at a time');
+await A.mouse.click(vb.x + 20, vb.y + 60);
 
 /* ---- The ⋯ menu: sizes ---- */
-const ideaMenuLabels = await menu(A, bub(A, 'Termites make hollow logs').locator('.mm-more'), 'Bigger');
-assert.deepEqual(ideaMenuLabels, ['Open the idea page', 'Add an idea below', 'Bigger', 'Smaller', 'Draw a connection', 'Change main bubble', 'Make a task', 'Delete']);
+const pickSize = async (opener, size) => {
+  await menu(A, opener, 'Size');
+  await popup(A).waitFor();
+  assert.deepEqual(await popup(A).locator('.popup-label').allTextContents(), ['Tiny', 'Small', 'Normal', 'Big', 'Huge']);
+  await popup(A).locator('.popup-item', { hasText: new RegExp(`^${size}`) }).click();
+};
+const ideaMenuLabels = await menu(A, bub(A, 'Termites make hollow logs').locator('.mm-more'));
+assert.deepEqual(ideaMenuLabels, ['Open the idea page', 'Add an idea below', 'Size', 'Draw a connection', 'Change main bubble', 'Make a task', 'Delete']);
+await pickSize(bub(A, 'Termites make hollow logs').locator('.mm-more'), 'Big');
 await bub(A, 'Termites make hollow logs').and(A.locator('.size-l')).waitFor();
 assert.equal((await idea(A, 'Termites make hollow logs')).size, 'l');
-await menu(A, bub(A, 'Termites make hollow logs').locator('.mm-more'), 'Smaller');
+await pickSize(bub(A, 'Termites make hollow logs').locator('.mm-more'), 'Tiny');
+await bub(A, 'Termites make hollow logs').and(A.locator('.size-xs')).waitFor();
+await pickSize(bub(A, 'Termites make hollow logs').locator('.mm-more'), 'Normal');
 await bub(A, 'Termites make hollow logs').and(A.locator('.size-m')).waitFor();
 assert.equal((await idea(A, 'Termites make hollow logs')).size, undefined);    // normal isn't saved
-await menu(A, bub(A, 'Termites make hollow logs').locator('.mm-more'), 'Smaller');
+await pickSize(bub(A, 'Termites make hollow logs').locator('.mm-more'), 'Small');
 await bub(A, 'Termites make hollow logs').and(A.locator('.size-s')).waitFor();
-// The section in the middle can be bigger too
-const secLabels = await menu(A, A.locator('.mm-center .mm-more'), 'Bigger');
-assert.deepEqual(secLabels, ['Show as a list', 'Add an idea here', 'Bigger', 'Smaller']);
+// The section in the middle has a size too
+const secLabels = await menu(A, A.locator('.mm-center .mm-more'));
+assert.deepEqual(secLabels, ['Show as a list', 'Add an idea here', 'Size']);
+await pickSize(A.locator('.mm-center .mm-more'), 'Huge');
 await A.locator('.mm-center.size-xl').waitFor();
 
 /* ---- Connections ---- */
@@ -280,12 +315,36 @@ await menu(A, bub(A, 'Termites make hollow logs').locator('.mm-more'), 'Draw a c
 await A.locator('.mm-bar', { hasText: 'Tap the bubble to connect “Termites make hollow logs” to' }).waitFor();
 await tapBubble(A, 'More termite nest mechanics');
 await A.locator('.mm-link').waitFor();
-assert.deepEqual((await idea(A, 'Termites make hollow logs')).connections, ['i-termite-nest-mechanics']);
+assert.deepEqual((await idea(A, 'Termites make hollow logs')).connections, [{ id: 'i-termite-nest-mechanics', style: 'dashed' }]);
+await expectToast(A, /Tap the line to change how it looks/);
 assert.equal(await A.locator('.mm-bar').count(), 0);
 // Joining the same two again, or an idea to its main bubble, says so
 await menu(A, bub(A, 'More termite nest mechanics').locator('.mm-more'), 'Draw a connection');
 await tapBubble(A, 'Termites make hollow logs');
 await expectToast(A, /already joined/);
+// Tap the line: 7 styles; dotted, then an arrow, turned around, and Undo
+await clickLine(A);
+assert.deepEqual(await dlg(A).locator('.mm-style span').allTextContents(), ['Dashed', 'Dotted', 'Dash-dot', 'Dash-dot-dot', 'Long dash', 'Solid', 'Arrow']);
+assert.equal(await dlg(A).locator('.mm-style[aria-pressed="true"]').getAttribute('data-style'), 'dashed');
+await dlg(A).locator('.mm-style[data-style="dotted"]').click();
+await A.locator('.mm-link.mm-link-dotted').waitFor();
+assert.equal((await idea(A, 'Termites make hollow logs')).connections[0].style, 'dotted');
+await A.waitForTimeout(200);
+await clickLine(A);
+await dlg(A).locator('.mm-style[data-style="arrow"]').click();
+await A.locator('.mm-link[marker-end]').waitFor();
+await A.waitForTimeout(200);
+await clickLine(A);
+await dlg(A).getByRole('button', { name: 'Turn the arrow around' }).click();
+await A.waitForTimeout(300);
+assert.equal((await idea(A, 'Termites make hollow logs')).connections, undefined);
+assert.deepEqual((await idea(A, 'More termite nest mechanics')).connections, [{ id: 'i-termites-make-hollow-logs', style: 'arrow' }]);
+await A.getByRole('button', { name: 'Undo' }).click();
+await expectToast(A, /Undone: Turn the arrow around/);
+await A.waitForTimeout(300);
+assert.deepEqual((await idea(A, 'Termites make hollow logs')).connections, [{ id: 'i-termite-nest-mechanics', style: 'arrow' }]);
+assert.equal((await idea(A, 'More termite nest mechanics')).connections, undefined);
+await A.screenshot({ path: SHOTS + 'm5-arrow.png' });
 // Remove it (from either end), and Undo brings it back
 const withConn = await menu(A, bub(A, 'More termite nest mechanics').locator('.mm-more'), 'Remove a connection');
 assert.ok(withConn.includes('Remove a connection'));
@@ -383,6 +442,27 @@ await A.waitForFunction(() => ![...document.querySelectorAll('.mm-text')].some(e
 assert.equal(await idea(A, 'Termite queen'), null);
 await clearToasts(A);
 
+/* ---- Full screen: only the map and its buttons; Escape leaves it ---- */
+await A.getByRole('button', { name: 'Full screen' }).click();
+await A.waitForFunction(() => document.body.classList.contains('mm-full'));
+await A.waitForTimeout(150);
+const fullBox = await A.locator('.mm').boundingBox();
+assert.ok(near(fullBox.x, 0) && near(fullBox.y, 0) && near(fullBox.width, 1280) && near(fullBox.height, 900), 'the map fills the window');
+const fullView = await A.locator('.mm-view').boundingBox();
+assert.ok(fullView.height > 700, 'the map gets the height');
+assert.equal(await A.locator('.mm .tk-add-input').isVisible(), true);    // adding ideas stays
+await A.locator('.tk-add-input').fill('Termite armies');
+await A.locator('.tk-add-input').press('Enter');
+await bub(A, 'Termite armies').waitFor();
+assert.equal(await A.evaluate(() => document.body.classList.contains('mm-full')), true, 'still full screen after a redraw');
+await A.screenshot({ path: SHOTS + 'm6-full.png' });
+await A.keyboard.press('Escape');
+await A.waitForFunction(() => !document.body.classList.contains('mm-full'));
+await menu(A, bub(A, 'Termite armies').locator('.mm-more'), 'Delete');
+await dlg(A).getByRole('button', { name: 'Delete' }).click();
+await A.waitForFunction(() => ![...document.querySelectorAll('.mm-text')].some(e => e.textContent === 'Termite armies'));
+await clearToasts(A);
+
 /* ---- Zoom, pan, Fit; the view is remembered on this device ---- */
 let v0 = await view(A);
 await A.getByRole('button', { name: 'Zoom in' }).click();
@@ -390,14 +470,19 @@ let v1 = await view(A);
 assert.ok(near(v1.k, Math.min(3, v0.k * 1.25), 0.001));
 await A.getByRole('button', { name: 'Zoom out' }).click();
 assert.ok(near((await view(A)).k, v0.k, 0.001));
-await A.mouse.move(vb.x + 60, vb.y + 60);
+{ const b = await A.locator('.mm-view').boundingBox(); await A.mouse.move(b.x + 60, b.y + 60); }
 await A.mouse.wheel(0, -300);
 await A.waitForTimeout(100);
 assert.ok((await view(A)).k > v0.k, 'the wheel zooms in');
+for (let i = 0; i < 6; i++) await A.getByRole('button', { name: 'Zoom in' }).click();
+await A.waitForTimeout(300);
+await A.screenshot({ path: SHOTS + 'm7-zoomed-pc.png' });
+await A.getByRole('button', { name: 'Fit the whole map' }).click();
 v0 = await view(A);
-await A.mouse.move(vb.x + 30, vb.y + 40);
+const vbNow = await A.locator('.mm-view').boundingBox();
+await A.mouse.move(vbNow.x + 30, vbNow.y + 40);
 await A.mouse.down();
-await A.mouse.move(vb.x + 130, vb.y + 90, { steps: 8 });
+await A.mouse.move(vbNow.x + 130, vbNow.y + 90, { steps: 8 });
 await A.mouse.up();
 v1 = await view(A);
 assert.ok(near(v1.tx - v0.tx, 100, 2) && near(v1.ty - v0.ty, 50, 2), 'dragging empty space moves around');
@@ -437,7 +522,7 @@ await push(A, async rv => {
   const text = await e.locator('.rv-diff').textContent();
   assert.match(text, /Place on the mind map.*moved/);
   assert.match(text, /Bubble size.*Normal.*Small/);
-  assert.match(text, /Connections on the mind map.*None.*More termite nest mechanics/);
+  assert.match(text, /Connections on the mind map.*None.*More termite nest mechanics \(arrow\)/);
   const m = rv.locator('.rv-item', { hasText: /^Mobs/ });
   await m.getByRole('button', { name: 'See changes' }).click();
   await m.locator('.rv-diff').waitFor();
@@ -449,7 +534,7 @@ assert.equal(JSON.parse(gh.files()['data/ideas/i-termites-make-hollow-logs.json'
 await A.getByRole('button', { name: 'Settings' }).click();
 await dlg(A).getByRole('button', { name: 'Copy ideas for Claude' }).click();
 const clip = await A.evaluate(() => navigator.clipboard.readText());
-assert.match(clip, /i-termites-make-hollow-logs \| Termites make hollow logs \| links: wiki\/hollow-logs \| connected to: i-termite-nest-mechanics/);
+assert.match(clip, /i-termites-make-hollow-logs \| Termites make hollow logs \| links: wiki\/hollow-logs \| connected to: i-termite-nest-mechanics \(arrow\)/);
 await A.keyboard.press('Escape');
 
 /* ---------------- Device B: phone ---------------- */

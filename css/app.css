@@ -1535,10 +1535,20 @@ h3.id-shead { font-size: var(--fs-body); }
 }
 .mm-view.is-moving, .mm-view:active { cursor: grabbing; }
 .mm-view.is-picking { cursor: crosshair; box-shadow: inset 0 0 0 2px var(--accent); }
-.mm-world { position: absolute; left: 0; top: 0; transform-origin: 0 0; will-change: transform; }
+.mm-world { position: absolute; left: 0; top: 0; transform-origin: 0 0; }   /* no will-change: text stays sharp when zoomed */
 .mm-lines { position: absolute; left: 0; top: 0; overflow: visible; pointer-events: none; }
 .mm-line { stroke: var(--line-strong); stroke-width: 2.5; stroke-linecap: round; }
-.mm-link { fill: none; stroke: var(--accent); stroke-width: 2; stroke-dasharray: 7 6; stroke-linecap: round; opacity: 0.85; }
+.mm-link { fill: none; stroke: var(--accent); stroke-width: 2.5; stroke-linecap: butt; opacity: 0.9; }
+.mm-link.dots { stroke-width: 3.5; stroke-linecap: round; }
+.mm-arrow-head { fill: var(--accent); }
+.mm-link-hit { fill: none; stroke: transparent; stroke-width: 18; pointer-events: stroke; cursor: pointer; }
+.mm-styles { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px; margin: 8px 0 12px; }
+.mm-style {
+  display: grid; justify-items: start; gap: 6px; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--r-small);
+  background: var(--sunken); color: var(--text); font: inherit; font-weight: 600; text-align: left; cursor: pointer;
+}
+.mm-style[aria-pressed="true"] { background: var(--accent-soft); box-shadow: inset 0 0 0 2px var(--accent); }
+.mm-swatch { display: block; overflow: visible; }
 
 /* Bubbles */
 .mm-b {
@@ -1549,6 +1559,7 @@ h3.id-shead { font-size: var(--fs-body); }
   font-weight: 600; line-height: 1.2; white-space: normal; cursor: pointer;
 }
 .mm-text { overflow-wrap: anywhere; text-align: center; }
+.mm-b.size-xs { font-size: 11px; padding: 5px 4px 5px 10px; } .mm-b.size-xs .mm-text { max-width: 110px; } .mm-b.size-xs .mm-more { width: 22px; height: 22px; font-size: 13px; }
 .mm-b.size-s { font-size: 13px; } .mm-b.size-s .mm-text { max-width: 130px; }
 .mm-b.size-m { font-size: 15px; } .mm-b.size-m .mm-text { max-width: 170px; }
 .mm-b.size-l { font-size: 19px; padding: 10px 8px 10px 18px; } .mm-b.size-l .mm-text { max-width: 220px; }
@@ -1573,12 +1584,24 @@ h3.id-shead { font-size: var(--fs-body); }
 }
 .mm-fold[aria-expanded="false"] { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
 
-/* Select mode and "tap a bubble" */
+/* Select mode and "tap a bubble": a bar in place of the buttons above the map */
 .mm-bar-host:empty { display: none; }
+.mm-tools[hidden] { display: none; }
 .mm-bar {
+  min-height: 36px;
   display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px;
-  padding: 8px 10px; border: 1px solid var(--accent); border-radius: var(--r-small); background: var(--accent-soft);
+  padding: 8px 10px; border: 1px solid var(--accent); border-radius: var(--r-small);
+  background: color-mix(in srgb, var(--accent) 16%, var(--panel));
 }
+
+/* Full screen: only the map and its buttons */
+body.mm-full { overflow: hidden; }
+body.mm-full .mm {
+  position: fixed; inset: 0; z-index: 60; display: flex; flex-direction: column; gap: 8px;
+  padding: calc(10px + env(safe-area-inset-top, 0px)) 10px calc(10px + var(--safe-bottom));
+  background: var(--bg);
+}
+body.mm-full .mm-view { flex: 1; min-height: 0; height: auto; }
 .mm-bar-text { font-weight: 600; }
 .mm-bar-actions { display: flex; flex-wrap: wrap; gap: 6px; }
 
@@ -1587,6 +1610,8 @@ h3.id-shead { font-size: var(--fs-body); }
   .mm-fold:hover { border-color: var(--accent); }
 }
 @media (max-width: 759px) {
-  .mm-tool:not(.mm-tool-icon) span { font-size: 13px; }
   .mm-tools .btn-small { height: 36px; }
+  .mm-tool-icon span { display: none; }                  /* icons only on phones: one row */
+  .mm-tool-icon { width: 40px; padding: 0; justify-content: center; }
+  .mm-tools { gap: 4px; }
 }
