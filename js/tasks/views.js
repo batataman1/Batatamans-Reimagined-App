@@ -106,6 +106,11 @@ function linkNames(t, wiki) {
   return t.data.links.filter(l => l.collection === 'wiki').map(l => nameFor(wiki, l.id)).join(', ');
 }
 
+/** "Termites make hollow logs": the titles of the ideas a task links (it was made from). */
+function ideaNames(t, ui) {
+  return t.data.links.filter(l => l.collection === 'ideas').map(l => ui.ideas?.get(l.id)?.data.title || 'a deleted idea').join(', ');
+}
+
 /** The folder a task is in, shown when it isn't the folder being looked at. */
 function folderLine(t, model, key) {
   const f = model.folderOf(t);
@@ -164,13 +169,15 @@ function taskItem(t, model, wiki, ui, key) {
   }, '⋯');
   const where = folderLine(t, model, key);
   const links = linkNames(t, wiki);
+  const ideas = ideaNames(t, ui);
   return h('li', { class: `tk-item tk-pri-${t.data.priority} tk-${t.data.status}`, dataset: { task: t.id } },
     tick(t),
     h('div', { class: 'tk-row' },
       h('span', { class: 'tk-row-head' }, h('a', { class: 'tk-title tk-open', href: `#/tasks/t/${t.id}`, text: t.data.title || '(no title)' }), tags(t)),
-      where || links ? h('span', { class: 'tk-row-sub' },
+      where || links || ideas ? h('span', { class: 'tk-row-sub' },
         where ? h('span', { class: 'tk-where' }, icon('tasks', { size: 12 }), where) : null,
-        links ? h('span', { class: 'tk-links' }, icon('book', { size: 12 }), links) : null) : null),
+        links ? h('span', { class: 'tk-links' }, icon('book', { size: 12 }), links) : null,
+        ideas ? h('span', { class: 'tk-links tk-ideas' }, icon('idea', { size: 12 }), ideas) : null) : null),
     more);
 }
 
@@ -261,8 +268,8 @@ function folderMenu(f, anchor, model, ui, i, sibs) {
   });
 }
 
-function nameDialog({ title, value = '', label = 'Name', confirm, hint, extra = null, onSave }) {
-  const input = h('input', { class: 'input', name: 'name', value, autocomplete: 'off', maxLength: 60, placeholder: 'For example: Ostrich' });
+export function nameDialog({ title, value = '', label = 'Name', confirm, hint, extra = null, placeholder = 'For example: Ostrich', maxLength = 60, onSave }) {
+  const input = h('input', { class: 'input', name: 'name', value, autocomplete: 'off', maxLength, placeholder });
   const error = h('p', { class: 'form-error', role: 'alert', hidden: true });
   const save = async close => {
     const n = input.value.trim();
@@ -494,13 +501,15 @@ function card(t, model, wiki, ui, key) {
   const more = h('button', { type: 'button', class: 'row-menu', 'aria-label': `More for ${t.data.title || 'task'}`, title: 'Status, folder, delete', onclick: () => taskMenu(t, more, model, ui) }, '⋯');
   const where = folderLine(t, model, key);
   const links = linkNames(t, wiki);
+  const ideas = ideaNames(t, ui);
   const el = h('article', { class: `tb-card tk-pri-${t.data.priority}`, dataset: { task: t.id } },
     handle,
     h('div', { class: 'tb-body' },
       h('a', { class: 'tk-title tk-open', href: `#/tasks/t/${t.id}`, text: t.data.title || '(no title)' }),
       h('span', { class: 'tb-tags' }, tags(t, { showStatus: false })),
       where ? h('span', { class: 'tk-where small' }, icon('tasks', { size: 12 }), where) : null,
-      links ? h('span', { class: 'tk-links small' }, icon('book', { size: 12 }), links) : null),
+      links ? h('span', { class: 'tk-links small' }, icon('book', { size: 12 }), links) : null,
+      ideas ? h('span', { class: 'tk-links tk-ideas small' }, icon('idea', { size: 12 }), ideas) : null),
     more);
   cardDrag(el, handle, t, model, ui);
   return el;

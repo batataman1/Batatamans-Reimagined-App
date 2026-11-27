@@ -1,8 +1,12 @@
 // "Copy tasks for Claude": a plain-text list Claude can read to suggest what to close.
+// "Copy ideas for Claude": the ideas as an outline, to talk them through in the chat.
 // Claude never deletes anything; it only suggests, and changes come back through Import.
 
 import { store } from './store.js';
 import { getTasks } from '../tasks/model.js';
+import { getIdeas } from '../ideas/model.js';
+import { getWiki } from '../wiki/model.js';
+import { plainText } from '../wiki/text.js';
 
 const TYPE = { task: 'Task', bug: 'Bug' };
 const PRIORITY = { critical: 'Critical', high: 'High', normal: 'Normal', low: 'Low' };
@@ -37,4 +41,39 @@ export async function tasksAsText() {
     ].filter(Boolean).join(' | '));
   }
   return { text: lines.join('\n'), count: rows.length };
+}
+
+/* ---------- Copy ideas for Claude ---------- */
+
+const NOTE_MAX = 300;
+
+/** A plain-text outline of the ideas, section by section, for talking them through with Claude. */
+export async function ideasAsText() {
+  const [model, tasks, wiki] = await Promise.all([getIdeas(), getTasks(), getWiki()]);
+  const note = i => {
+    const t = i.data.body.map(b => (b?.type === 'image' ? '[picture]' : b?.type === 'divider' ? '' : plainText(b?.text || '', wiki)))
+      .filter(Boolean).join(' / ').replace(/\s+/g, ' ').trim();
+    return t.length > NOTE_MAX ? `${t.slice(0, NOTE_MAX - 1)}…` : t;
+  };
+  const line = (i, depth) => {
+    const pad = '  '.repeat(depth);
+    const links = i.data.links.map(l => `${l.collection}/${l.id}`).join(', ');
+    const made = tasks.linkedTo('ideas', i.id).map(t => `${t.id} (${STATUS[t.data.status] || 'To do'})`).join(', ');
+    const out = [[`${pad}- ${i.id}`, i.data.title || '(untitled)', made ? `tasks: ${made}` : '', links ? `links: ${links}` : ''].filter(Boolean).join(' | ')];
+    const n = note(i);
+    if (n) out.push(`${pad}  note: ${n}`);
+    for (const k of model.kidsOf(i.id)) out.push(...line(k, depth + 1));
+    return out;
+  };
+  const date = new Date().toISOString().slice(0, 10);
+  const lines = [`Batataman's Reimagined app: ideas (${model.ideas.size}, copied ${date})`];
+  const block = (heading, list) => {
+    lines.push('', `## ${heading}`);
+    if (!list.length) lines.push('(no ideas yet)');
+    for (const i of list) lines.push(...line(i, 0));
+  };
+  for (const { section } of model.tree()) block(`${model.path(section.id).map(s => s.name).join(' / ')} (${section.id})`, model.topIdeas(section.id));
+  const loose = model.topIdeas(null);
+  if (loose.length) block('Not sorted', loose);
+  return { text: lines.join('\n'), count: model.ideas.size };
 }

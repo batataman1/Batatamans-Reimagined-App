@@ -155,13 +155,32 @@ export function taskEditorView(el, model, wiki, ui, id) {
       field('Folder', folder));
   }
 
+  /** Ideas whose title matches what's typed, for the Links picker. */
+  const fold = s => String(s || '').normalize('NFKD').replace(/[̀-ͯ]/g, '').toLowerCase();
+  function ideaItems(q, pick) {
+    const words = fold(q).split(/\s+/).filter(Boolean);
+    const linked = new Set(draft.links.filter(l => l.collection === 'ideas').map(l => l.id));
+    return [...(ui.ideas?.ideas.values() || [])]
+      .filter(i => !linked.has(i.id) && words.length && words.every(w => fold(i.data.title).includes(w)))
+      .sort((a, b) => a.data.title.localeCompare(b.data.title))
+      .slice(0, 5)
+      .map(i => ({ label: i.data.title || '(no title)', hint: 'Idea', icon: 'idea', onPick: () => pick(i.id, 'ideas') }));
+  }
+  /** A chip link to an idea (dashed if it was deleted). */
+  function ideaLink(iid) {
+    const it = ui.ideas?.get(iid);
+    return h('a', {
+      class: it ? 'wlink wlink-idea' : 'wlink wlink-missing', href: `#/ideas/i/${encodeURIComponent(iid)}`,
+      title: it ? 'An idea' : "This idea doesn't exist (anymore)",
+    }, it ? (it.data.title || '(no title)') : 'Deleted idea');
+  }
   function linksEditor() {
     const host = h('div', { class: 'ed-related' });
     const draw = () => {
       const wikiLinks = draft.links.filter(l => l.collection === 'wiki');
-      const input = h('input', { class: 'input', placeholder: 'Link a wiki page: type its name', 'aria-label': 'Link a wiki page', autocomplete: 'off', spellcheck: 'false' });
-      const pick = pid => {
-        draft.links = [...draft.links, { collection: 'wiki', id: pid }];
+      const input = h('input', { class: 'input', placeholder: 'Link a wiki page or an idea: type its name', 'aria-label': 'Link a wiki page or an idea', autocomplete: 'off', spellcheck: 'false' });
+      const pick = (pid, collection = 'wiki') => {
+        draft.links = [...draft.links, { collection, id: pid }];
         changed();
         draw();
         host.querySelector('input')?.focus();
@@ -170,9 +189,11 @@ export function taskEditorView(el, model, wiki, ui, id) {
         const q = input.value;
         const pop = currentPopup();
         if (!q.trim()) { if (pop?.owner === input) pop.close(); return; }
-        const items = pageItems(wiki, q, pick, { exclude: wikiLinks.map(l => l.id) });
+        const pages = pageItems(wiki, q, pick, { exclude: wikiLinks.map(l => l.id) });
+        const isNew = it => it.hint === 'New page (create it later)';
+        const items = [...pages.filter(it => !isNew(it)), ...ideaItems(q, pick), ...pages.filter(isNew)];
         if (pop?.owner === input) { pop.setItems(items); return; }
-        const p = openPopup({ rect: input.getBoundingClientRect(), items, title: 'Wiki page', emptyText: 'No page like that' });
+        const p = openPopup({ rect: input.getBoundingClientRect(), items, title: 'Wiki page or idea', emptyText: 'Nothing like that' });
         p.owner = input;
       };
       input.addEventListener('input', update);
@@ -187,7 +208,7 @@ export function taskEditorView(el, model, wiki, ui, id) {
       clear(host,
         draft.links.length
           ? h('div', { class: 'ed-chips' }, draft.links.map((l, i) => {
-              const a = l.collection === 'wiki' ? pageLink(wiki, l.id) : h('span', { class: 'wlink', text: `${l.collection}/${l.id}` });
+              const a = l.collection === 'wiki' ? pageLink(wiki, l.id) : l.collection === 'ideas' ? ideaLink(l.id) : h('span', { class: 'wlink', text: `${l.collection}/${l.id}` });
               if (a.tagName === 'A') a.addEventListener('click', crossTabClick);
               return h('span', { class: 'ed-chip' }, a,
                 h('button', {
@@ -195,7 +216,7 @@ export function taskEditorView(el, model, wiki, ui, id) {
                   onclick: () => { draft.links = draft.links.filter((_, j) => j !== i); changed(); draw(); },
                 }, '✕'));
             }))
-          : h('p', { class: 'muted small', text: 'No links yet. The task shows on the pages it links.' }),
+          : h('p', { class: 'muted small', text: 'No links yet. The task shows on the pages and ideas it links.' }),
         input);
     };
     draw();

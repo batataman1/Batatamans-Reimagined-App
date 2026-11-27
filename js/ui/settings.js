@@ -9,7 +9,7 @@ import { getThemeState, setStyle, setColor, setCustomColors, turnOffCustomColors
 import { STYLES, COLORS, buildTheme } from '../config/themes.js';
 import { openModal, confirmDialog, toast } from './dialogs.js';
 import { icon } from './icons.js';
-import { openImport, copyTasksForClaude } from './claudeui.js';
+import { openImport, copyTasksForClaude, copyIdeasForClaude } from './claudeui.js';
 import { canPromptInstall, isInstalled, promptInstall, onInstallChange } from './install.js';
 
 let openSheet = null;
@@ -52,6 +52,7 @@ function claudeSection(m) {
   return h('div', { class: 'button-row' },
     h('button', { type: 'button', class: 'btn', onclick: () => { m.close(); openImport(); } }, icon('import', { size: 18 }), 'Import from Claude'),
     h('button', { type: 'button', class: 'btn', onclick: () => copyTasksForClaude() }, icon('copy', { size: 18 }), 'Copy tasks for Claude'),
+    h('button', { type: 'button', class: 'btn', onclick: () => copyIdeasForClaude() }, icon('copy', { size: 18 }), 'Copy ideas for Claude'),
   );
 }
 

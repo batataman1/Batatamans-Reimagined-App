@@ -6,7 +6,7 @@
 //   status: "todo" | "doing" | "done",
 //   difficulty: "quick" | "small" | "medium" | "big" (missing = not set yet),
 //   folder: a folder id, or null for "No folder",
-//   links: [{ collection: "wiki" | "ideas", id }],     wiki pages (ideas from part 2c Ideas)
+//   links: [{ collection: "wiki" | "ideas", id }],     wiki pages and ideas (a task made from an idea links it)
 //   body: [blocks],                                     the description, same blocks as wiki pages
 //   created: ISO time, doneAt: ISO time (only while done)   used for sorting, never shown
 // }
@@ -172,10 +172,10 @@ export async function updateTask(id, change, opts) {
 }
 
 /** Make a new task. Returns its id. */
-export async function createTask({ title, type = 'task', priority = 'normal', difficulty = null, status = 'todo', folder = null, links = [] }) {
-  const id = newTaskId();
+export async function createTask({ id = newTaskId(), title, type = 'task', priority = 'normal', difficulty = null, status = 'todo', folder = null, links = [], body = [] }) {
   await store.put('tasks', id, {
-    title: String(title).trim(), type, priority, ...(difficulty ? { difficulty } : {}), status, folder: folder || null, links, created: new Date().toISOString(),
+    title: String(title).trim(), type, priority, ...(difficulty ? { difficulty } : {}), status, folder: folder || null, links,
+    ...(body.length ? { body } : {}), created: new Date().toISOString(),
   });
   return id;
 }

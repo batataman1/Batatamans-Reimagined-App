@@ -2,15 +2,8 @@
 // and optionally navigate(path) for moving around inside the tab (the part of the address
 // after #/<id>/). mount() may return a cleanup function that runs when you switch away.
 
-import { placeholderTab } from './placeholder.js';
 import { wikiTab } from './wiki.js';
 import { tasksTab } from './tasks.js';
+import { ideasTab } from './ideas.js';
 
-const wiki = wikiTab;
-const tasks = tasksTab;
-
-const ideas = placeholderTab({
-  id: 'ideas', label: 'Ideas', icon: 'idea', collections: ['ideas', 'sections'], comingIn: '2c to 2e',
-});
-
-export const TABS = [wiki, tasks, ideas];
+export const TABS = [wikiTab, tasksTab, ideasTab];

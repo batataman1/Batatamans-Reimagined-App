@@ -5,6 +5,7 @@
 import { store } from '../core/store.js';
 import { getWiki } from '../wiki/model.js';
 import { getTasks } from '../tasks/model.js';
+import { getIdeas } from '../ideas/model.js';
 import { renderTasksView, parseTasksPath } from '../tasks/views.js';
 
 const APP_TITLE = "Batataman's Reimagined";
@@ -61,8 +62,9 @@ export const tasksTab = {
         leaveView = null;
         await leave();
       }
-      const [model, wiki] = await Promise.all([getTasks(), getWiki()]);
+      const [model, wiki, ideas] = await Promise.all([getTasks(), getWiki(), getIdeas()]);
       if (mine !== token) return;
+      ui.ideas = ideas;   // for the names of linked ideas
 
       const y = window.scrollY;
       const focused = document.activeElement;

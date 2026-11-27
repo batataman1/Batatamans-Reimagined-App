@@ -1,8 +1,8 @@
-// Import from Claude (paste, preview, confirm) and Copy tasks for Claude.
+// Import from Claude (paste, preview, confirm), Copy tasks for Claude and Copy ideas for Claude.
 
 import { h, clear, plural, humanizeKey, shortValue } from '../core/util.js';
 import { parseImportText, previewImport, applyImport, COLLECTIONS } from '../core/importer.js';
-import { tasksAsText } from '../core/exporter.js';
+import { tasksAsText, ideasAsText } from '../core/exporter.js';
 import { openModal, confirmDialog, toast } from './dialogs.js';
 import { icon } from './icons.js';
 
@@ -143,13 +143,26 @@ export async function copyTasksForClaude() {
     toast('There are no tasks yet.');
     return;
   }
+  await copyText(text, `Copied ${plural(count, 'task')}. Paste them into the chat with Claude.`, 'Copy tasks for Claude');
+}
+
+export async function copyIdeasForClaude() {
+  const { text, count } = await ideasAsText();
+  if (!count) {
+    toast('There are no ideas yet.');
+    return;
+  }
+  await copyText(text, `Copied ${plural(count, 'idea')}. Paste them into the chat with Claude.`, 'Copy ideas for Claude');
+}
+
+async function copyText(text, done, title) {
   try {
     await navigator.clipboard.writeText(text);
-    toast(`Copied ${plural(count, 'task')}. Paste them into the chat with Claude.`, { kind: 'ok' });
+    toast(done, { kind: 'ok' });
   } catch {
     const area = h('textarea', { class: 'input code', rows: 10, readOnly: true, value: text });
     openModal({
-      title: 'Copy tasks for Claude',
+      title,
       body: [h('p', { text: 'Copy this text and paste it into the chat with Claude.' }), area],
       actions: [{ id: 'ok', label: 'Done', kind: 'primary' }],
       onOpen: () => { area.focus(); area.select(); },

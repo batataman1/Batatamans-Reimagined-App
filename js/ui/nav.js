@@ -1,10 +1,11 @@
-// Moving from one tab to another by a link (a task on a wiki page, a wiki page in a task).
+// Moving from one tab to another by a link (a task on a wiki page, a wiki page in a task,
+// an idea in a task).
 // The new screen is marked as reached by a link, so its Back button and the phone's back
 // gesture return to where you were, in the other tab.
 
 /** Open an address in another tab as a new history entry. */
 export function goCrossTab(hash) {
-  history.pushState({ wikiDepth: 1, tasksDepth: 1 }, '', hash);
+  history.pushState({ wikiDepth: 1, tasksDepth: 1, ideasDepth: 1 }, '', hash);
   window.dispatchEvent(new HashChangeEvent('hashchange'));
 }
 

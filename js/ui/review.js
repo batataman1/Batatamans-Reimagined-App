@@ -16,10 +16,11 @@ import { GROUPS, TEMPLATES } from '../config/wiki.js';
 import { builtinOrder } from '../wiki/custom.js';
 import { PICKABLE_ICONS } from '../config/icons.js';
 import { getTasks, TYPES, PRIORITIES, STATUSES, DIFFICULTIES } from '../tasks/model.js';
+import { getIdeas } from '../ideas/model.js';
 
-const COLLECTION_NAMES = { wiki: 'Wiki page', tasks: 'Task', 'task-folders': 'Task folder', ideas: 'Idea', groups: 'Wiki group', templates: 'Wiki template' };
+const COLLECTION_NAMES = { wiki: 'Wiki page', tasks: 'Task', 'task-folders': 'Task folder', ideas: 'Idea', sections: 'Idea section', groups: 'Wiki group', templates: 'Wiki template' };
 // Collections whose items own pictures (images/<id>-…), shown as one entry with them.
-const OWNS_PICTURES = new Set(['wiki', 'tasks']);
+const OWNS_PICTURES = new Set(['wiki', 'tasks', 'ideas']);
 const STATUS_TEXT = { new: 'New', changed: 'Changed', deleted: 'Deleted' };
 
 /* ---------- Grouping what's pending ---------- */
@@ -66,7 +67,7 @@ const statusText = e => (isReset(e) ? 'Reset to built-in' : STATUS_TEXT[shownSta
 function editAddress(e) {
   if (e.main.kind !== 'record' || e.status === 'deleted') return null;
   const id = encodeURIComponent(e.main.row.id);
-  return { wiki: `#/wiki/e/${id}`, groups: `#/wiki/c/g/${id}`, templates: `#/wiki/c/t/${id}`, tasks: `#/tasks/t/${id}` }[e.main.row.collection] || null;
+  return { wiki: `#/wiki/e/${id}`, groups: `#/wiki/c/g/${id}`, templates: `#/wiki/c/t/${id}`, tasks: `#/tasks/t/${id}`, ideas: `#/ideas/i/${id}` }[e.main.row.collection] || null;
 }
 
 /* ---------- The screen ---------- */
@@ -179,7 +180,7 @@ export async function reviewChanges(gh) {
       // If it's open in an editor, leave the editor first so it doesn't save it again.
       const open = editAddress({ ...e, status: 'changed' });
       if (open && (location.hash === open || location.hash.startsWith(`${open}/`))) {
-        location.hash = { wiki: `#/wiki/p/${encodeURIComponent(e.main.row.id)}`, tasks: '#/tasks' }[e.main.row.collection] || '#/wiki/c';
+        location.hash = { wiki: `#/wiki/p/${encodeURIComponent(e.main.row.id)}`, tasks: '#/tasks', ideas: '#/ideas' }[e.main.row.collection] || '#/wiki/c';
         await new Promise(r => setTimeout(r, 400));
       }
       await discard(e, gh, base);
@@ -240,6 +241,8 @@ async function describe(e, gh, base) {
         : kind === 'templates' ? await templateDiff(e.main.row.id, e.status === 'new' ? null : before, after)
         : kind === 'tasks' ? await taskDiff(e.status === 'new' ? null : before, after)
         : kind === 'task-folders' ? await folderDiff(e.status === 'new' ? null : before, after)
+        : kind === 'ideas' ? await ideaDiff(e.status === 'new' ? null : before, after)
+        : kind === 'sections' ? await sectionDiff(e.status === 'new' ? null : before, after)
         : genericDiff(before, after);
       out.push(lines.length
         ? h('dl', { class: 'rv-diff' }, lines)
@@ -438,12 +441,19 @@ async function templateDiff(id, a, b) {
 
 /* Tasks and their folders */
 
+/** "Ostrich, Idea: Termites make hollow logs": links as names. */
+function linkText(ls, wiki, ideas) {
+  return Array.isArray(ls) ? ls.map(l => (l.collection === 'wiki' ? nameFor(wiki, l.id)
+    : l.collection === 'ideas' ? `Idea: ${ideas.get(l.id)?.data.title || '(a deleted idea)'}`
+    : `${l.collection}/${l.id}`)).join(', ') : '';
+}
+
 async function taskDiff(a, b) {
-  const [wiki, model] = await Promise.all([getWiki(), getTasks()]);
+  const [wiki, model, ideas] = await Promise.all([getWiki(), getTasks(), getIdeas()]);
   const txt = v => plainText(String(v), wiki);
   const where = id => (id ? (model.folder(id) ? model.path(id).map(f => f.name).join(' › ') : '(a deleted folder)') : 'No folder');
   const label = (map, v, dflt) => map[v] || map[dflt];
-  const showLinks = ls => (Array.isArray(ls) ? ls.map(l => (l.collection === 'wiki' ? nameFor(wiki, l.id) : `${l.collection}/${l.id}`)).join(', ') : '');
+  const showLinks = ls => linkText(ls, wiki, ideas);
   const out = [];
   if (!a) {
     // New: just what it is.
@@ -472,6 +482,41 @@ async function folderDiff(a, b) {
   const model = await getTasks();
   const where = id => (id ? model.folder(id)?.name || '(a deleted folder)' : 'Top level');
   if (!a) return [line('New folder', null, b.name), line('Inside', null, where(b.parent))];
+  const out = [];
+  if (!same(a.name, b.name)) out.push(line('Name', a.name, b.name));
+  if ((a.parent || null) !== (b.parent || null)) out.push(line('Inside', where(a.parent), where(b.parent)));
+  if (a.order !== b.order && (a.parent || null) === (b.parent || null)) out.push(line('Place in the list', null, 'moved'));
+  return out;
+}
+
+/* Ideas and their sections */
+
+async function ideaDiff(a, b) {
+  const [wiki, model] = await Promise.all([getWiki(), getIdeas()]);
+  const txt = v => plainText(String(v), wiki);
+  const sec = id => (id ? (model.section(id) ? model.path(id).map(s => s.name).join(' › ') : '(a deleted section)') : 'Not sorted');
+  const under = id => (id ? (model.get(id)?.data.title || '(a deleted idea)') : 'Straight under the section');
+  const showLinks = ls => linkText(ls, wiki, model.ideas);
+  const out = [];
+  if (!a) {
+    out.push(line('Title', null, b.title || '(no title)'));
+    out.push(b.parent ? line('Comes under', null, under(b.parent)) : line('Section', null, sec(b.section)));
+    if (has(b.links)) out.push(line('Links', null, showLinks(b.links)));
+    if (has(b.body)) out.push(bodyDiff([], b.body, txt));
+    return out;
+  }
+  if (!same(a.title, b.title)) out.push(line('Title', a.title, b.title));
+  if ((a.section || null) !== (b.section || null) && !b.parent) out.push(line('Section', sec(a.section), sec(b.section)));
+  if ((a.parent || null) !== (b.parent || null)) out.push(line('Comes under', under(a.parent), under(b.parent)));
+  if (!same(a.links, b.links)) out.push(line('Links', showLinks(a.links), showLinks(b.links)));
+  if (!same(a.body, b.body)) out.push(bodyDiff(a.body, b.body, txt));
+  return out;
+}
+
+async function sectionDiff(a, b) {
+  const model = await getIdeas();
+  const where = id => (id ? model.section(id)?.name || '(a deleted section)' : 'Top level');
+  if (!a) return [line('New section', null, b.name), line('Inside', null, where(b.parent))];
   const out = [];
   if (!same(a.name, b.name)) out.push(line('Name', a.name, b.name));
   if ((a.parent || null) !== (b.parent || null)) out.push(line('Inside', where(a.parent), where(b.parent)));

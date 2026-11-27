@@ -1,0 +1,37 @@
+{
+  "format": "batataman-import",
+  "version": 1,
+  "summary": "Starter ideas: sections Mobs, Blocks and World, and the termite plans",
+  "changes": [
+    { "action": "upsert", "collection": "sections", "id": "s-mobs", "data": { "name": "Mobs", "parent": null, "order": 10 } },
+    { "action": "upsert", "collection": "sections", "id": "s-blocks", "data": { "name": "Blocks", "parent": null, "order": 20 } },
+    { "action": "upsert", "collection": "sections", "id": "s-world", "data": { "name": "World", "parent": null, "order": 30 } },
+    {
+      "action": "upsert", "collection": "ideas", "id": "i-termites",
+      "data": {
+        "title": "Termites", "section": "s-mobs", "parent": null,
+        "links": [{ "collection": "wiki", "id": "termite" }],
+        "body": [{ "type": "p", "text": "Plans for the [[termite]]s." }],
+        "created": "2026-11-27T10:00:00.000Z"
+      }
+    },
+    {
+      "action": "upsert", "collection": "ideas", "id": "i-termites-make-hollow-logs",
+      "data": {
+        "title": "Termites make hollow logs", "section": "s-mobs", "parent": "i-termites",
+        "links": [{ "collection": "wiki", "id": "hollow-logs" }],
+        "body": [{ "type": "p", "text": "[[hollow-logs|Hollow logs]] are supposed to be made by termites. Right now they have no recipe and are creative only." }],
+        "created": "2026-11-27T10:01:00.000Z"
+      }
+    },
+    {
+      "action": "upsert", "collection": "ideas", "id": "i-termite-nest-mechanics",
+      "data": {
+        "title": "More termite nest mechanics", "section": "s-mobs", "parent": "i-termites",
+        "links": [{ "collection": "wiki", "id": "termite-nest" }],
+        "body": [{ "type": "p", "text": "The [[termite-nest]] should get more mechanics." }],
+        "created": "2026-11-27T10:02:00.000Z"
+      }
+    }
+  ]
+}
