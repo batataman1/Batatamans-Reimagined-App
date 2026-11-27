@@ -8,7 +8,10 @@
 //   links: [{ collection: "wiki", id }],          wiki pages
 //   body: [blocks],                                the note, same blocks as wiki pages
 //   created: ISO time                              used for sorting, never shown
+//   order: number (optional)                       place among its siblings after a drag
 // }
+// Siblings are sorted by `order`; an idea without one counts as the time it was made (in ms),
+// so new ideas come last and a dragged idea gets a number between its new neighbours.
 // An idea that comes under another idea is always in that idea's section (its own `section` is
 // only used when it has no parent), so moving an idea moves everything under it along.
 // Tasks made from an idea link it ({ collection: "ideas", id } in the task's links).
@@ -45,9 +48,10 @@ export function normalizeIdea(d) {
   };
 }
 
-const byCreated = (a, b) =>
-  String(a.data.created || a.updatedAt || '').localeCompare(String(b.data.created || b.updatedAt || ''))
-  || a.data.title.localeCompare(b.data.title);
+/** Where an idea sits among its siblings (smaller first). */
+export const orderKey = i => (typeof i.data.order === 'number' && Number.isFinite(i.data.order) ? i.data.order
+  : Date.parse(i.data.created || i.updatedAt || '') || 0);
+const byCreated = (a, b) => orderKey(a) - orderKey(b) || a.data.title.localeCompare(b.data.title);
 
 async function build() {
   const [rows, sectionRows] = await Promise.all([store.list('ideas'), store.list('sections')]);
@@ -163,6 +167,8 @@ async function build() {
     parentOf: id => parentOf.get(id) || null,
     sectionOf, kidsOf, topIdeas, branch, ideasIn, ideaPath, textOf,
     count: key => ideasIn(key).length,
+    /** The ideas next to this one: under the same idea, or straight under the same section. */
+    siblingsOf: i => (parentOf.get(i.id) ? kidsOf(parentOf.get(i.id)) : topIdeas(sectionOf(i))),
   };
 }
 

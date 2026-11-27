@@ -12,7 +12,7 @@
 import { h, clear, plural } from '../core/util.js';
 import { store } from '../core/store.js';
 import { icon } from '../ui/icons.js';
-import { openModal, confirmDialog, messageDialog, errorDialog, toast } from '../ui/dialogs.js';
+import { openModal, confirmDialog, errorDialog, toast, deleteWithContentsDialog } from '../ui/dialogs.js';
 import { sortable } from '../ui/drag.js';
 import { openPopup } from '../wiki/popup.js';
 import { topNav } from '../wiki/parts.js';
@@ -21,7 +21,8 @@ import { orderBetween } from '../wiki/custom.js';
 import { nameDialog } from '../tasks/views.js';
 import { createIdea, newSectionId, searchIdeas } from './model.js';
 import { ideaEditorView } from './editor.js';
-import { sectionSelect, addUnderDialog, moveIdeaDialog, confirmDeleteIdea, removeIdea, makeTaskDialog } from './actions.js';
+import { sectionSelect, addUnderDialog, moveIdeaDialog, confirmDeleteIdea, removeIdea, makeTaskDialog, moveIdeaTo } from './actions.js';
+import { filesOfPage, isFileOfPage } from '../wiki/images.js';
 
 const APP_TITLE = "Batataman's Reimagined";
 
@@ -101,8 +102,12 @@ function ideaItem(idea, ctx, { where = '', flat = false } = {}) {
       }, folded ? '▸' : '▾')
     : h('span', { class: 'id-fold id-fold-none', 'aria-hidden': 'true' });
   const links = idea.data.links.filter(l => l.collection === 'wiki').map(l => nameFor(wiki, l.id)).join(', ');
-  return h('li', { class: 'id-node', dataset: { idea: idea.id } },
-    h('div', { class: 'id-item' },
+  const handle = flat ? null : h('button', {
+    type: 'button', class: 'id-handle', 'aria-label': `Move ${idea.data.title || 'idea'}`,
+    title: 'Drag: drop between ideas, or onto an idea to put it under that one. Tap for more',
+  }, '⋮⋮');
+  const itemEl = h('div', { class: 'id-item', dataset: { idea: idea.id } },
+      handle,
       foldBtn,
       h('div', { class: 'id-row' },
         h('span', { class: 'id-row-head' },
@@ -113,7 +118,10 @@ function ideaItem(idea, ctx, { where = '', flat = false } = {}) {
         where || links ? h('span', { class: 'tk-row-sub' },
           where ? h('span', { class: 'tk-where' }, icon('idea', { size: 12 }), where) : null,
           links ? h('span', { class: 'tk-links' }, icon('book', { size: 12 }), links) : null) : null),
-      more),
+      more);
+  if (handle) ideaDrag(itemEl, handle, idea, ctx);
+  return h('li', { class: 'id-node', dataset: { idea: idea.id } },
+    itemEl,
     kids.length && !folded ? h('ul', { class: 'id-tree' }, kids.map(k => ideaItem(k, ctx))) : null);
 }
 
@@ -161,7 +169,7 @@ function sectionPanel(ctx, key) {
   panel.classList.toggle('open', !!ui.sectionsOpen);
 
   const link = (k, label, depth = 0) => h('a', {
-    class: 'tk-flink', href: sectionHref(k), 'aria-current': k === key ? 'page' : null,
+    class: 'tk-flink', href: sectionHref(k), 'aria-current': k === key ? 'page' : null, dataset: { key: k },
     style: { '--depth': depth },
     onclick: () => { ui.sectionsOpen = false; },
   }, h('span', { class: 'tk-fname', text: label }), h('span', { class: 'tk-fcount', 'aria-label': plural(model.count(k), 'idea'), text: String(model.count(k) || '') }));
@@ -270,24 +278,139 @@ function moveSectionDialog(s, model) {
 
 async function deleteSection(s, ctx) {
   const { model, ui } = ctx;
-  const n = model.count(s.id);
-  const subs = model.childrenOf(s.id).length;
-  if (n || subs) {
-    await messageDialog({
-      title: `${s.name} isn't empty`,
-      body: h('p', { text: `It has ${[n ? plural(n, 'idea') : '', subs ? plural(subs, 'section') : ''].filter(Boolean).join(' and ')} inside. Move or delete ${n + subs === 1 ? 'it' : 'them'} first.` }),
+  const ideas = model.ideasIn(s.id);                 // its sub-sections' ideas too
+  const subs = [...model.sectionDescendants(s.id)].filter(id => id !== s.id);
+  let choice = 'empty';
+  if (ideas.length || subs.length) {
+    const inside = [ideas.length ? plural(ideas.length, 'idea') : '', subs.length ? plural(subs.length, 'section') : ''].filter(Boolean).join(' and ');
+    choice = await deleteWithContentsDialog({
+      title: `Delete the section “${s.name}”?`,
+      body: h('p', { text: `It has ${inside} inside${subs.length ? ' (the sections inside it are deleted with it)' : ''}.` }),
+      keepLabel: ideas.length ? `Keep the ${plural(ideas.length, 'idea')}: move ${ideas.length === 1 ? 'it' : 'them'} to Not sorted` : 'Nothing else is deleted',
+      keepButton: 'Delete section',
+      allButton: ideas.length ? `Delete section and ${plural(ideas.length, 'idea')}` : 'Delete section',
     });
-    return;
+  } else {
+    const ok = await confirmDialog({
+      title: `Delete the section “${s.name}”?`,
+      body: h('p', { text: "It's empty, so nothing else changes." }),
+      confirm: 'Delete section', danger: true,
+    });
+    if (!ok) choice = null;
   }
-  const ok = await confirmDialog({
-    title: `Delete the section “${s.name}”?`,
-    body: h('p', { text: "It's empty, so nothing else changes." }),
-    confirm: 'Delete section', danger: true,
+  if (!choice) return;
+  try {
+    if (choice === 'all') {
+      const used = new Set(ideas.flatMap(i => [...filesOfPage(i.data)]));
+      for (const f of await store.files()) {
+        if (used.has(f.path) || ideas.some(i => isFileOfPage(f.path, i.id))) await store.removeFile(f.path);
+      }
+      for (const i of ideas) await store.remove('ideas', i.id);
+    } else {
+      // Only the top ideas move; the ideas under them come along.
+      for (const i of ideas) if (!model.parentOf(i.id)) await store.put('ideas', i.id, { ...i.data, section: null, parent: null });
+    }
+    for (const id of [...subs, s.id]) await store.remove('sections', id);
+  } catch (err) { errorDialog(err, "The section couldn't be deleted"); return; }
+  toast(choice === 'all' && ideas.length
+    ? `Section and ${plural(ideas.length, 'idea')} deleted. Push to remove them from GitHub too.`
+    : ideas.length ? 'Section deleted; its ideas are in Not sorted now. Push to update GitHub.' : 'Section deleted. Push to remove it from GitHub too.');
+  if (location.hash === sectionHref(s.id) || subs.some(id => location.hash === sectionHref(id))) ui.leaveTo(s.parent ? `s/${s.parent}` : '');
+}
+
+/* ---------- Dragging ideas ---------- */
+
+/**
+ * Drag an idea by its ⋮⋮ handle (mouse or finger). Over another idea: its top or bottom edge
+ * puts it next to that idea (a line shows where), the middle puts it under that idea (the
+ * idea lights up). A section heading or a section in the left panel moves it there.
+ * Everything under the dragged idea comes along. A tap without moving opens the ⋯ menu.
+ */
+function ideaDrag(el, handle, idea, ctx) {
+  let dragged = false;
+  handle.addEventListener('click', () => { if (dragged) { dragged = false; return; } ideaMenu(idea, handle, ctx); });
+  handle.addEventListener('pointerdown', e => {
+    if (e.button !== 0) return;
+    const node = el.closest('.id-node');
+    const startX = e.clientX, startY = e.clientY;
+    let ghost = null, line = null, lit = null, drop = null, lastX = startX, lastY = startY, raf = 0, dx = 0, dy = 0;
+    handle.setPointerCapture?.(e.pointerId);
+
+    const light = x => { if (lit !== x) { lit?.classList.remove('is-drop-into'); lit = x; lit?.classList.add('is-drop-into'); } };
+    function where() {
+      const under = document.elementFromPoint(lastX, lastY);
+      const item = under?.closest('.id-item');
+      if (item && !node.contains(item)) {
+        const r = item.getBoundingClientRect();
+        const y = (lastY - r.top) / r.height;
+        const id = item.dataset.idea;
+        if (y < 0.28) return { to: { kind: 'before', id }, line: { x: r.left, y: r.top - 4, w: r.width } };
+        if (y > 0.72 && !item.closest('.id-node').querySelector(':scope > .id-tree')) return { to: { kind: 'after', id }, line: { x: r.left, y: r.bottom + 2, w: r.width } };
+        return { to: { kind: 'into', id }, lit: item };   // the middle (or the bottom of an open idea): under it
+      }
+      const head = under?.closest('.id-shead');
+      const block = head?.closest('.id-sblock');
+      if (block?.dataset.section) return { to: { kind: 'section', key: block.dataset.section === 'none' ? null : block.dataset.section }, lit: head };
+      const link = under?.closest('.tk-flink');
+      if (link && link.dataset.key && link.dataset.key !== 'all') return { to: { kind: 'section', key: link.dataset.key === 'none' ? null : link.dataset.key }, lit: link };
+      return null;
+    }
+    const place = () => {
+      ghost.style.transform = `translate(${lastX - dx}px, ${lastY - dy}px)`;
+      const w = where();
+      drop = w?.to || null;
+      light(w?.lit || null);
+      if (w?.line) {
+        line.hidden = false;
+        Object.assign(line.style, { left: `${w.line.x}px`, top: `${w.line.y}px`, width: `${w.line.w}px` });
+      } else line.hidden = true;
+    };
+    const autoScroll = () => {
+      const edge = 60;
+      const vy = lastY < edge + 60 ? -(edge + 60 - lastY) / 4 : lastY > innerHeight - edge ? (lastY - (innerHeight - edge)) / 4 : 0;
+      if (vy) { window.scrollBy(0, vy); place(); }
+      raf = requestAnimationFrame(autoScroll);
+    };
+    const move = ev => {
+      lastX = ev.clientX; lastY = ev.clientY;
+      if (!ghost) {
+        if (Math.hypot(lastX - startX, lastY - startY) < 6) return;
+        const r = el.getBoundingClientRect();
+        dx = startX - r.left; dy = startY - r.top;
+        ghost = el.cloneNode(true);
+        ghost.classList.add('id-ghost');
+        ghost.style.width = `${Math.min(r.width, 420)}px`;
+        line = h('div', { class: 'id-drop-line', hidden: true });
+        document.body.append(ghost, line);
+        node.classList.add('dragging');
+        document.body.classList.add('is-dragging');
+        raf = requestAnimationFrame(autoScroll);
+      }
+      ev.preventDefault();
+      place();
+    };
+    const end = async ev => {
+      handle.removeEventListener('pointermove', move);
+      handle.removeEventListener('pointerup', end);
+      handle.removeEventListener('pointercancel', end);
+      cancelAnimationFrame(raf);
+      if (!ghost) return;
+      dragged = true;
+      setTimeout(() => { dragged = false; }, 0);
+      ghost.remove(); line.remove();
+      light(null);
+      node.classList.remove('dragging');
+      document.body.classList.remove('is-dragging');
+      if (ev.type === 'pointercancel' || !drop) return;
+      try {
+        if (drop.kind === 'into') ctx.ui.unfold(drop.id);
+        await moveIdeaTo(ctx.model, idea, drop);
+      } catch (err) { errorDialog(err, "The idea couldn't be moved"); }
+    };
+    handle.addEventListener('pointermove', move);
+    handle.addEventListener('pointerup', end);
+    handle.addEventListener('pointercancel', end);
   });
-  if (!ok) return;
-  await store.remove('sections', s.id);
-  toast('Section deleted. Push to remove it from GitHub too.');
-  if (location.hash === sectionHref(s.id)) ui.leaveTo(s.parent ? `s/${s.parent}` : '');
 }
 
 /* ---------- The main screen ---------- */
@@ -349,7 +472,7 @@ function homeView(el, ctx, key) {
       clear(content,
         !all.length && !tops.length ? h('p', { class: 'muted tk-empty', text: 'No ideas yet. Type one above and press Enter.' }) : null,
         tops.map(s => sectionBlock(s, ctx)),
-        loose.length ? h('section', { class: 'id-sblock' },
+        loose.length ? h('section', { class: 'id-sblock', dataset: { section: 'none' } },
           h('h2', { class: 'id-shead' }, h('span', { class: 'id-fold id-fold-none', 'aria-hidden': 'true' }), h('a', { href: sectionHref('none'), text: 'Not sorted' }),
             h('span', { class: 'id-scount', text: plural(model.count('none'), 'idea') })),
           outline(loose, ctx)) : null);

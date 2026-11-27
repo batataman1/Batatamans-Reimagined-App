@@ -109,3 +109,24 @@ export function toast(message, { kind = 'info', action, duration = 4200 } = {}) 
   function remove() { clearTimeout(timer); el.remove(); }
   return remove;
 }
+
+/**
+ * Deleting something that still holds things (a task folder, an idea section). A ticked box
+ * keeps what's inside (moved out first); unticked deletes it all. Resolves 'keep', 'all' or null.
+ */
+export function deleteWithContentsDialog({ title, body, keepLabel, keepButton, allButton }) {
+  const keep = h('input', { type: 'checkbox', name: 'keep', checked: true });
+  const m = openModal({
+    title,
+    body: [body, h('label', { class: 'ed-check' }, keep, h('span', { text: keepLabel }))],
+    actions: [
+      { id: 'cancel', label: 'Cancel', kind: 'quiet' },
+      { id: 'ok', label: keepButton, kind: 'danger', onClick: close => close(keep.checked ? 'keep' : 'all') },
+    ],
+  });
+  keep.addEventListener('change', () => {
+    const btn = m.dialog.querySelector('[data-action="ok"]');
+    if (btn) btn.textContent = keep.checked ? keepButton : allButton;
+  });
+  return m.result.then(v => (v === 'keep' || v === 'all' ? v : null));
+}

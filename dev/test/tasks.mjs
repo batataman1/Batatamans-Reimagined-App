@@ -194,8 +194,9 @@ await dlg(A).getByRole('button', { name: 'Move' }).click();
 await A.waitForFunction(id => document.querySelector(`.tk-frow[data-folder="${id}"]`)?.parentElement.closest('.tk-frow') !== null, world.id);
 assert.equal((await folderNamed(A, 'World')).parent, mobs.id);
 await menu(A, mobsHandle, 'Delete folder');
-assert.match(await dlg(A).textContent(), /Mobs isn't empty/);
-await dlg(A).getByRole('button', { name: 'OK' }).click();
+assert.match(await dlg(A).textContent(), /It has 2 tasks and 2 folders inside/);
+assert.equal(await dlg(A).locator('input[name=keep]').isChecked(), true);
+await dlg(A).getByRole('button', { name: 'Cancel' }).click();
 await menu(A, A.locator(`.tk-frow[data-folder="${world.id}"] > .tk-fline .tk-fhandle`), 'Delete folder');
 await dlg(A).getByRole('button', { name: 'Delete folder' }).click();
 await A.waitForFunction(id => !document.querySelector(`.tk-frow[data-folder="${id}"]`), world.id);
@@ -472,6 +473,25 @@ await A.goto(BASE + '#/wiki/p/termite-nest');
 await A.locator('.wiki-tasks .tk-item', { hasText: 'Loot tables for the termite blocks' }).waitFor();
 await A.goto(BASE + '#/tasks/t/t-wood-set-signs-boats');
 assert.equal(await A.locator('.blocks .blk').count(), 6);
+
+/* ---- Deleting a folder with tasks: keep them (No folder) or delete them too ---- */
+await A.goto(BASE + '#/tasks/f/f-world');
+await A.locator('h1', { hasText: /^World$/ }).waitFor();
+const worldTasks = (await list(A, 'tasks')).filter(x => x.folder === 'f-world').map(x => x.id);
+assert.ok(worldTasks.length > 0);
+await menu(A, A.locator('.tk-frow[data-folder="f-world"] > .tk-fline .tk-fhandle'), 'Delete folder');
+assert.match(await dlg(A).locator('.ed-check').textContent(), /move (it|them) to No folder/);
+await dlg(A).getByRole('button', { name: 'Delete folder' }).click();
+await expectToast(A, /its tasks are in No folder now/);
+await A.waitForFunction(() => location.hash === '#/tasks');
+for (const id of worldTasks) assert.equal((await list(A, 'tasks')).find(x => x.id === id).folder, null);
+assert.equal((await list(A, 'task-folders')).some(f => f.id === 'f-world'), false);
+const blockTasks = (await list(A, 'tasks')).filter(x => x.folder === 'f-blocks').map(x => x.id);
+await menu(A, A.locator('.tk-frow[data-folder="f-blocks"] > .tk-fline .tk-fhandle'), 'Delete folder');
+await dlg(A).locator('input[name=keep]').uncheck();
+await dlg(A).getByRole('button', { name: `Delete folder and ${blockTasks.length} tasks` }).click();
+await expectToast(A, new RegExp(`Folder and ${blockTasks.length} tasks deleted`));
+for (const id of blockTasks) assert.equal((await list(A, 'tasks')).some(x => x.id === id), false);
 
 console.log('errors:', errors.length ? errors : 'none');
 assert.equal(errors.length, 0);

@@ -225,8 +225,8 @@ await dlg(A).getByRole('button', { name: 'Move' }).click();
 await A.waitForFunction(id => document.querySelector(`.tk-frow[data-section="${id}"]`)?.parentElement.closest('.tk-frow')?.dataset.section === 's-blocks', plants.id);
 assert.equal((await sectionNamed(A, 'Plants & crops')).parent, 's-blocks');
 await menu(A, handle(plants.id), 'Delete section');
-assert.match(await dlg(A).textContent(), /isn't empty/);
-await dlg(A).getByRole('button', { name: 'OK' }).click();
+assert.match(await dlg(A).textContent(), /It has 1 idea inside/);
+await dlg(A).getByRole('button', { name: 'Cancel' }).click();
 await menu(A, handle('s-world'), 'New section inside');
 await dlg(A).locator('input[name=name]').fill('Temp');
 await dlg(A).getByRole('button', { name: 'Make section' }).click();
@@ -507,6 +507,72 @@ await quickAdd(B, 'Termite soldiers');
 await push(B);
 await pull(A);
 assert.equal((await ideaNamed(A, 'Termite soldiers')).section, 's-mobs');
+
+/* ---- Dragging ideas: next to another, under another, to a section ---- */
+const dragIdea = async (page, title, target, zone, drag = mouseDrag) => {
+  const box = await target.boundingBox();
+  const y = zone === 'top' ? box.y + 3 : zone === 'bottom' ? box.y + box.height - 3 : box.y + box.height / 2;
+  await drag(page, row(page, title).locator('.id-handle'), { x: box.x + box.width / 2, y });
+};
+await A.goto(BASE + '#/ideas/s/s-mobs');
+await row(A, 'Termite soldiers').waitFor();
+assert.deepEqual(await outlineOf(A), ['Termites', '  More termite nest mechanics', '  Logs drop termites when broken', 'Termite soldiers', 'Desert boss']);
+// Onto the middle of another idea: it goes under it
+await dragIdea(A, 'Termite soldiers', row(A, 'Termites'), 'middle');
+await A.waitForFunction(() => document.querySelectorAll('.id-node .id-node').length === 3);
+assert.deepEqual(await outlineOf(A), ['Termites', '  More termite nest mechanics', '  Logs drop termites when broken', '  Termite soldiers', 'Desert boss']);
+assert.equal((await ideaNamed(A, 'Termite soldiers')).parent, 'i-termites');
+// Onto the top edge of an idea: just above it
+await dragIdea(A, 'Logs drop termites when broken', row(A, 'More termite nest mechanics'), 'top');
+await A.waitForFunction(() => document.querySelector('.id-node .id-node .id-title')?.textContent === 'Logs drop termites when broken');
+assert.deepEqual(await outlineOf(A), ['Termites', '  Logs drop termites when broken', '  More termite nest mechanics', '  Termite soldiers', 'Desert boss']);
+// Under an idea that's under another (two levels), and the fold arrow appears
+await dragIdea(A, 'Termite soldiers', row(A, 'Logs drop termites when broken'), 'middle');
+await row(A, 'Logs drop termites when broken').locator('.id-fold[aria-expanded="true"]').waitFor();
+assert.deepEqual(await outlineOf(A), ['Termites', '  Logs drop termites when broken', '    Termite soldiers', '  More termite nest mechanics', 'Desert boss']);
+// Not into its own branch
+await dragIdea(A, 'Termites', row(A, 'Termite soldiers'), 'middle');
+await A.waitForTimeout(300);
+assert.equal((await ideaNamed(A, 'Termites')).parent, null);
+// Onto a section in the left panel: straight under that section
+await dragIdea(A, 'Termite soldiers', A.locator('.tk-flink[data-key="s-world"]'), 'middle');
+await A.waitForFunction(() => ![...document.querySelectorAll('.id-title')].some(e => e.textContent === 'Termite soldiers'));
+idea = await ideaNamed(A, 'Termite soldiers');
+assert.deepEqual([idea.section, idea.parent], ['s-world', null]);
+assert.equal(await A.locator('.id-ghost, .id-drop-line').count(), 0);
+await A.screenshot({ path: SHOTS + 'i7-dragged.png' });
+// The phone: drag with a finger onto another idea
+await push(A);
+await pull(B);
+await B.goto(BASE + '#/ideas/s/s-world');
+await row(B, 'Termite soldiers').waitFor();
+await row(B, 'Termite soldiers').locator('.id-handle').evaluate(e => e.scrollIntoView({ block: 'center' }));
+await dragIdea(B, 'Termite soldiers', row(B, 'Ostrich racing tracks'), 'middle', fingerDrag);
+await B.waitForFunction(() => document.querySelectorAll('.id-node .id-node').length === 1);
+assert.equal((await ideaNamed(B, 'Termite soldiers')).parent, races.id);
+assert.equal(await overflows(B), false);
+await B.screenshot({ path: SHOTS + 'i8-phone-dragged.png' });
+
+/* ---- Deleting a section with ideas: keep them (Not sorted) or delete them too ---- */
+await A.goto(BASE + `#/ideas/s/${plants.id}`);
+await A.locator('h1', { hasText: 'Plants & crops' }).waitFor();
+await menu(A, handle(plants.id), 'Delete section');
+assert.match(await dlg(A).locator('.ed-check').textContent(), /move it to Not sorted/);
+await dlg(A).getByRole('button', { name: 'Delete section' }).click();
+await expectToast(A, /its ideas are in Not sorted now/);
+idea = await ideaNamed(A, 'Baobab fruit juice');
+assert.deepEqual([idea.section, idea.parent], [null, null]);
+assert.equal(await sectionNamed(A, 'Plants & crops'), null);
+await A.goto(BASE + '#/ideas/s/s-mobs');
+await menu(A, handle('s-mobs'), 'Delete section');
+assert.match(await dlg(A).textContent(), /It has 4 ideas and 1 section inside/);
+await dlg(A).getByRole('button', { name: 'Cancel' }).click();
+await menu(A, handle(bosses.id), 'Delete section');
+await dlg(A).locator('input[name=keep]').uncheck();
+await dlg(A).getByRole('button', { name: 'Delete section and 1 idea' }).click();
+await expectToast(A, /Section and 1 idea deleted/);
+assert.equal(await ideaNamed(A, 'Desert boss'), null);
+assert.equal(await sectionNamed(A, 'Bosses'), null);
 
 console.log('errors:', errors.length ? errors : 'none');
 assert.equal(errors.length, 0);

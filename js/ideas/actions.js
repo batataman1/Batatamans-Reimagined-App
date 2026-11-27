@@ -12,7 +12,7 @@ import { getWiki } from '../wiki/model.js';
 import { TYPES, PRIORITIES, DIFFICULTIES, DIFFICULTY_HINTS, getTasks, createTask, newTaskId, updateTask } from '../tasks/model.js';
 import { folderSelect } from '../tasks/actions.js';
 import { nameDialog } from '../tasks/views.js';
-import { createIdea, updateIdea } from './model.js';
+import { createIdea, updateIdea, orderKey } from './model.js';
 
 /** A dropdown of the sections, indented like the tree. value '' = Not sorted. */
 export function sectionSelect(model, value, { none = 'Not sorted', exclude = new Set(), name = 'section', label = 'Section' } = {}) {
@@ -224,4 +224,37 @@ export async function linkTaskDialog(idea) {
     onOpen: () => input.focus(),
   });
   return m.result;
+}
+
+/**
+ * Put an idea somewhere else after a drag (everything under it comes along):
+ *   { kind: 'into', id }            under another idea, as its last one
+ *   { kind: 'before' | 'after', id } next to another idea (same main idea, same section)
+ *   { kind: 'section', key }        straight under a section (key null = Not sorted), last
+ * Returns false when the place isn't allowed (an idea can't go inside its own branch).
+ */
+export async function moveIdeaTo(model, idea, to) {
+  if (to.id && model.branch(idea.id).has(to.id)) return false;
+  let change;
+  if (to.kind === 'section') {
+    const last = model.topIdeas(to.key).filter(i => i.id !== idea.id).map(orderKey);
+    change = { parent: null, section: to.key || null, order: last.length ? Math.max(...last, Date.now()) + 1000 : Date.now() };
+  } else {
+    const target = model.get(to.id);
+    if (!target) return false;
+    if (to.kind === 'into') {
+      const last = model.kidsOf(target.id).filter(i => i.id !== idea.id).map(orderKey);
+      change = { parent: target.id, section: model.sectionOf(target), order: last.length ? Math.max(...last) + 1000 : Date.now() };
+    } else {
+      const sibs = model.siblingsOf(target).filter(i => i.id !== idea.id);
+      const at = sibs.findIndex(i => i.id === target.id);
+      const before = to.kind === 'before' ? sibs[at - 1] : target;
+      const after = to.kind === 'before' ? target : sibs[at + 1];
+      const a = before ? orderKey(before) : null, b = after ? orderKey(after) : null;
+      const order = a === null ? b - 1000 : b === null ? a + 1000 : (a + b) / 2;
+      change = { parent: model.parentOf(target.id), section: model.sectionOf(target), order };
+    }
+  }
+  await updateIdea(idea.id, change);
+  return true;
 }

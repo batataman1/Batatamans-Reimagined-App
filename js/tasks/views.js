@@ -11,7 +11,7 @@
 import { h, clear, plural } from '../core/util.js';
 import { store } from '../core/store.js';
 import { icon } from '../ui/icons.js';
-import { openModal, confirmDialog, messageDialog, errorDialog, toast } from '../ui/dialogs.js';
+import { openModal, confirmDialog, errorDialog, toast, deleteWithContentsDialog } from '../ui/dialogs.js';
 import { sortable } from '../ui/drag.js';
 import { openPopup } from '../wiki/popup.js';
 import { topNav } from '../wiki/parts.js';
@@ -336,24 +336,38 @@ function moveFolderDialog(f, model) {
 }
 
 async function deleteFolder(f, model, ui) {
-  const n = model.tasksIn(f.id).length;
-  const subs = model.childrenOf(f.id).length;
-  if (n || subs) {
-    await messageDialog({
-      title: `${f.name} isn't empty`,
-      body: h('p', { text: `It has ${[n ? plural(n, 'task') : '', subs ? plural(subs, 'folder') : ''].filter(Boolean).join(' and ')} inside. Move or delete ${n + subs === 1 ? 'it' : 'them'} first.` }),
+  const tasks = model.tasksIn(f.id);                 // its sub-folders' tasks too
+  const subs = [...model.descendants(f.id)].filter(id => id !== f.id);
+  let choice = 'empty';
+  if (tasks.length || subs.length) {
+    const inside = [tasks.length ? plural(tasks.length, 'task') : '', subs.length ? plural(subs.length, 'folder') : ''].filter(Boolean).join(' and ');
+    choice = await deleteWithContentsDialog({
+      title: `Delete the folder “${f.name}”?`,
+      body: h('p', { text: `It has ${inside} inside${subs.length ? ' (the folders inside it are deleted with it)' : ''}.` }),
+      keepLabel: tasks.length ? `Keep the ${plural(tasks.length, 'task')}: move ${tasks.length === 1 ? 'it' : 'them'} to No folder` : 'Nothing else is deleted',
+      keepButton: 'Delete folder',
+      allButton: tasks.length ? `Delete folder and ${plural(tasks.length, 'task')}` : 'Delete folder',
     });
-    return;
+  } else {
+    const ok = await confirmDialog({
+      title: `Delete the folder “${f.name}”?`,
+      body: h('p', { text: "It's empty, so nothing else changes." }),
+      confirm: 'Delete folder', danger: true,
+    });
+    if (!ok) choice = null;
   }
-  const ok = await confirmDialog({
-    title: `Delete the folder “${f.name}”?`,
-    body: h('p', { text: "It's empty, so nothing else changes." }),
-    confirm: 'Delete folder', danger: true,
-  });
-  if (!ok) return;
-  await store.remove('task-folders', f.id);
-  toast('Folder deleted. Push to remove it from GitHub too.');
-  if (location.hash === folderHref(f.id)) ui.leaveTo(f.parent ? `f/${f.parent}` : '');
+  if (!choice) return;
+  try {
+    for (const t of tasks) {
+      if (choice === 'all') await removeTaskAndFiles(t.id, t.data);
+      else await updateTask(t.id, { folder: null });
+    }
+    for (const id of [...subs, f.id]) await store.remove('task-folders', id);
+  } catch (err) { errorDialog(err, "The folder couldn't be deleted"); return; }
+  toast(choice === 'all' && tasks.length
+    ? `Folder and ${plural(tasks.length, 'task')} deleted. Push to remove them from GitHub too.`
+    : tasks.length ? `Folder deleted; its tasks are in No folder now. Push to update GitHub.` : 'Folder deleted. Push to remove it from GitHub too.');
+  if (location.hash === folderHref(f.id) || subs.some(id => location.hash === folderHref(id))) ui.leaveTo(f.parent ? `f/${f.parent}` : '');
 }
 
 /* ---------- The main screen ---------- */
