@@ -23,6 +23,8 @@ export function openPopup({ rect, items, title, onClose, emptyText = 'Nothing fo
   const list = h('ul', { class: 'popup-list', role: 'listbox' });
   const box = h('div', { class: 'popup', role: 'dialog', 'aria-label': title || 'Choose' },
     title ? h('div', { class: 'popup-title', text: title }) : null, list);
+  box.style.left = '0px';
+  box.style.top = `${window.scrollY}px`;
   // Keep the focus in the text while clicking the list.
   box.addEventListener('pointerdown', e => e.preventDefault());
   document.body.append(box);
@@ -41,7 +43,13 @@ export function openPopup({ rect, items, title, onClose, emptyText = 'Nothing fo
           h('span', { class: 'popup-label', text: it.label }),
           it.hint ? h('span', { class: 'popup-hint', text: it.hint }) : null))
       : h('li', { class: 'popup-empty', text: emptyText }));
-    list.querySelector('.active')?.scrollIntoView({ block: 'nearest' });
+    // Keep the highlighted item visible by scrolling the list only (never the page).
+    const a = list.querySelector('.active');
+    if (a) {
+      const top = a.offsetTop, bottom = top + a.offsetHeight;
+      if (top < box.scrollTop) box.scrollTop = top;
+      else if (bottom > box.scrollTop + box.clientHeight) box.scrollTop = bottom - box.clientHeight;
+    }
   };
 
   const place = r => {

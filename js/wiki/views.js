@@ -16,6 +16,8 @@ import { pageName, humanizeId } from './model.js';
 import { renderText, renderBody, plainText, pageLink } from './text.js';
 import { topNav, fileImage, safeIcon } from './parts.js';
 import { editorView, newPageDialog } from './editor.js';
+import { isPicturePath } from './images.js';
+import { pageMenu } from './actions.js';
 
 const APP_TITLE = "Batataman's Reimagined";
 
@@ -73,18 +75,22 @@ function thumb(page, wiki) {
   return h('span', { class: 'pic thumb' }, h('span', { class: 'pic-empty' }, safeIcon(place?.sub.icon || place?.group.icon || 'book', 24)));
 }
 
-function pageRow(page, wiki, { showPlace = false, snippet } = {}) {
+function pageRow(page, wiki, ui, { showPlace = false, snippet } = {}) {
   const place = wiki.placeOf(page);
-  return h('li', h('a', { class: 'page-row', href: `#/wiki/p/${page.id}`, dataset: { page: page.id } },
+  const more = h('button', {
+    type: 'button', class: 'row-menu', 'aria-label': `More for ${pageName(page)}`, title: 'Edit or delete',
+    onclick: () => pageMenu(page, more, ui),
+  }, '⋯');
+  return h('li', { class: 'page-item' }, h('a', { class: 'page-row', href: `#/wiki/p/${page.id}`, dataset: { page: page.id } },
     thumb(page, wiki),
     h('span', { class: 'page-row-text' },
       h('span', { class: 'page-row-head' }, h('span', { class: 'page-row-name', text: pageName(page) }), tags(page, wiki)),
       showPlace ? h('span', { class: 'page-row-place', text: place ? `${place.group.name} › ${place.sub.name}` : 'Not sorted yet' }) : null,
       h('span', { class: 'page-row-snippet', text: snippet ?? short(plainText(page.data.overview, wiki)) }),
-    )));
+    )), more);
 }
 
-const pageList = (pages, wiki, opts) => h('ul', { class: 'page-list' }, pages.map(p => pageRow(p, wiki, opts)));
+const pageList = (pages, wiki, ui, opts) => h('ul', { class: 'page-list' }, pages.map(p => pageRow(p, wiki, ui, opts)));
 
 const newPageButton = (wiki, ui, where = '') => h('button', {
   type: 'button', class: 'btn btn-small head-action', onclick: () => newPageDialog(wiki, ui, { where }),
@@ -114,10 +120,10 @@ function homeView(el, wiki, ui) {
     wiki.unsorted.length ? h('section', { class: 'wiki-section wiki-unsorted' },
       h('h2', { text: 'Not sorted yet' }),
       h('p', { class: 'muted small', text: "These pages aren't in a group yet. Open one, tap Edit and choose where it goes." }),
-      pageList(wiki.unsorted, wiki)) : null,
+      pageList(wiki.unsorted, wiki, ui)) : null,
     total ? h('section', { class: 'wiki-section' },
       h('h2', { text: 'Recently changed' }),
-      h('ul', { class: 'page-list compact' }, wiki.recent(6).map(p => pageRow(p, wiki, { showPlace: true, snippet: timeAgo(p.updatedAt) })))) : null,
+      h('ul', { class: 'page-list compact' }, wiki.recent(6).map(p => pageRow(p, wiki, ui, { showPlace: true, snippet: timeAgo(p.updatedAt) })))) : null,
   );
 
   const update = () => {
@@ -129,7 +135,7 @@ function homeView(el, wiki, ui) {
     results.hidden = false;
     clear(results,
       h('p', { class: 'muted small', text: found.length ? plural(found.length, 'page') + ' found' : `Nothing found for “${q}”.` }),
-      found.length ? h('ul', { class: 'page-list' }, found.slice(0, 50).map(r => pageRow(r.page, wiki, { showPlace: true, snippet: r.snippet || undefined }))) : null);
+      found.length ? h('ul', { class: 'page-list' }, found.slice(0, 50).map(r => pageRow(r.page, wiki, ui, { showPlace: true, snippet: r.snippet || undefined }))) : null);
   };
   input.addEventListener('input', update);
   input.addEventListener('keydown', e => {
@@ -183,14 +189,14 @@ function subView(el, wiki, ui, groupId, subId) {
     h('div', { class: 'tab-head' }, h('h1', { text: s.name }),
       h('span', { class: 'muted', text: `${plural(pages.length, 'page')} · ${wiki.templates[s.template]?.name || 'No'} template` }),
       newPageButton(wiki, ui, `${g.id}/${s.id}`)),
-    pages.length ? pageList(pages, wiki) : h('p', { class: 'muted', text: 'No pages here yet.' }));
+    pages.length ? pageList(pages, wiki, ui) : h('p', { class: 'muted', text: 'No pages here yet.' }));
 }
 
 function unsortedView(el, wiki, ui) {
   clear(el,
     topNav(ui, '', { href: '#/wiki', label: 'Wiki' }),
     h('div', { class: 'tab-head' }, h('h1', { text: 'Not sorted yet' })),
-    wiki.unsorted.length ? pageList(wiki.unsorted, wiki) : h('p', { class: 'muted', text: 'Every page is in a group.' }));
+    wiki.unsorted.length ? pageList(wiki.unsorted, wiki, ui) : h('p', { class: 'muted', text: 'Every page is in a group.' }));
 }
 
 function notFound(el, ui, what) {
@@ -259,19 +265,26 @@ function infobox(page, wiki, tpl, place) {
   const d = page.data;
   const fields = d.fields && typeof d.fields === 'object' ? d.fields : {};
   const known = new Set((tpl?.fields || []).map(f => f.key));
-  const rows = (tpl?.fields || []).map(f => ({ label: f.label, value: fields[f.key] }));
+  const rows = (tpl?.fields || []).map(f => ({ label: f.label, value: fields[f.key], kind: f.kind }));
   for (const [key, value] of Object.entries(fields)) {
     if (!known.has(key) && value !== null && value !== '') rows.push({ label: humanizeId(key.replace(/([a-z0-9])([A-Z])/g, '$1-$2').toLowerCase()), value, extra: true });
   }
   const hasValue = v => v !== undefined && v !== null && String(v).trim() !== '';
   const anyField = rows.some(r => hasValue(r.value));
   const row = (label, content, cls = '') => [h('dt', { class: cls, text: label }), h('dd', { class: cls }, content)];
+  // A picture field (like the crafting recipe) gets the whole width of the box.
+  const value = r => {
+    if (!hasValue(r.value)) return r.kind === 'image' ? 'No picture yet' : '—';
+    if (isPicturePath(r.value)) return fileImage(r.value, r.label, { className: 'infobox-field-pic', placeholder: 'Picture missing', size: 20 });
+    return renderText(String(r.value), wiki);
+  };
+  const cls = r => [hasValue(r.value) ? '' : 'empty', r.kind === 'image' || isPicturePath(r.value) ? 'wide' : ''].filter(Boolean).join(' ');
 
   return h('aside', { class: 'infobox', 'aria-label': 'Facts' },
     fileImage(d.picture, pageName(page), { className: 'infobox-pic', placeholder: 'No picture yet', size: 36 }),
     h('dl', { class: 'infobox-facts' },
       anyField
-        ? rows.map(r => row(r.label, hasValue(r.value) ? renderText(String(r.value), wiki) : '—', hasValue(r.value) ? '' : 'empty'))
+        ? rows.map(r => row(r.label, value(r), cls(r)))
         : h('div', { class: 'infobox-none muted small', text: tpl ? 'No details yet.' : 'No template: this page isn\'t in a sub-group yet.' }),
       row('Category', place
         ? [h('a', { href: `#/wiki/g/${place.group.id}`, text: place.group.name }), ' › ', h('a', { href: `#/wiki/g/${place.group.id}/${place.sub.id}`, text: place.sub.name })]

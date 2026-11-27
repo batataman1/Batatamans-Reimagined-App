@@ -7,36 +7,39 @@
 // Changes made in the app (part 2b step 3) are saved in the "groups" and "templates"
 // collections and override these defaults by id.
 
-const f = (key, label) => ({ key, label });
+// kind 'image': the field holds a picture or GIF (e.g. a screenshot of the crafting recipe).
+const f = (key, label, kind) => (kind ? { key, label, kind } : { key, label });
+const recipe = () => f('craftingRecipe', 'Crafting recipe', 'image');
 
 export const TEMPLATES = {
   mob: { name: 'Mob', fields: [
     f('health', 'Health'), f('attackDamage', 'Attack damage'), f('behavior', 'Behavior'),
     f('spawnBiomes', 'Spawn biomes'), f('drops', 'Drops'), f('breedingFood', 'Breeding or taming food')] },
   item: { name: 'Item', fields: [
-    f('stackSize', 'Stack size'), f('obtainedFrom', 'Obtained from'), f('craftingRecipe', 'Crafting recipe'),
+    f('stackSize', 'Stack size'), f('obtainedFrom', 'Obtained from'), recipe(),
     f('usedToCraft', 'Used to craft'), f('craftedAt', 'Crafted at'), f('behavior', 'Behavior')] },
   food: { name: 'Food', fields: [
     f('hungerRestored', 'Hunger restored'), f('saturation', 'Saturation'),
-    f('effectsWhenEaten', 'Effects when eaten'), f('obtainedFrom', 'Obtained from')] },
+    f('effectsWhenEaten', 'Effects when eaten'), f('obtainedFrom', 'Obtained from'), recipe()] },
   tool: { name: 'Tool', fields: [
     f('toolType', 'Tool type'), f('miningTier', 'Mining tier'), f('durability', 'Durability'),
-    f('attackDamage', 'Attack damage'), f('miningSpeed', 'Mining speed'), f('repairMaterial', 'Repair material')] },
+    f('attackDamage', 'Attack damage'), f('miningSpeed', 'Mining speed'), f('repairMaterial', 'Repair material'), recipe()] },
   weapon: { name: 'Weapon', fields: [
     f('attackDamage', 'Attack damage'), f('attackSpeed', 'Attack speed'), f('durability', 'Durability'),
-    f('specialAbility', 'Special ability'), f('repairMaterial', 'Repair material')] },
+    f('specialAbility', 'Special ability'), f('repairMaterial', 'Repair material'), recipe()] },
   armor: { name: 'Armor', fields: [
     f('armorSlot', 'Armor slot'), f('armorPoints', 'Armor points'), f('durability', 'Durability'),
-    f('setBonus', 'Set bonus'), f('repairMaterial', 'Repair material')] },
+    f('setBonus', 'Set bonus'), f('repairMaterial', 'Repair material'), recipe()] },
   utility: { name: 'Utility & equipment', fields: [
     f('durability', 'Durability'), f('uses', 'Uses'), f('function', 'Function'),
-    f('howToUse', 'How to use'), f('cooldown', 'Cooldown'), f('repairMaterial', 'Repair material')] },
+    f('howToUse', 'How to use'), f('cooldown', 'Cooldown'), f('repairMaterial', 'Repair material'), recipe()] },
   potion: { name: 'Potion', fields: [
     f('effects', 'Effects'), f('duration', 'Duration'), f('brewedFrom', 'Brewed from'),
-    f('upgrades', 'Upgrades'), f('splashAndLingering', 'Splash & lingering'), f('color', 'Color')] },
+    f('upgrades', 'Upgrades'), f('splashAndLingering', 'Splash & lingering'), f('color', 'Color'),
+    f('brewingRecipe', 'Brewing recipe', 'image')] },
   block: { name: 'Block', fields: [
     f('requiredTool', 'Required tool'), f('lightLevel', 'Light level emitted'), f('drops', 'Drops'),
-    f('obtainedFrom', 'Obtained from'), f('craftingRecipe', 'Crafting recipe'), f('usedToCraft', 'Used to craft'),
+    f('obtainedFrom', 'Obtained from'), recipe(), f('usedToCraft', 'Used to craft'),
     f('craftedAt', 'Crafted at'), f('behavior', 'Behavior')] },
   structure: { name: 'Structure', fields: [
     f('location', 'Location'), f('frequency', 'Frequency'), f('loot', 'Loot'), f('mobsPresent', 'Mobs present')] },

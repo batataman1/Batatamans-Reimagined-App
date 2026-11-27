@@ -78,6 +78,11 @@ export const store = {
     return row && !row.deleted ? row : null;
   },
 
+  /** Every file on this device (not removed). */
+  async files() {
+    return (await idb.getAll('files')).filter(f => !f.deleted);
+  },
+
   async putFile(path, blob, { source = null } = {}) {
     const row = { path, blob, mime: blob.type || mimeFromPath(path), updatedAt: now(), dirty: true, deleted: false };
     await idb.put('files', row);

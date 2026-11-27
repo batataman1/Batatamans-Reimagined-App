@@ -4,6 +4,7 @@ import { h, plural } from '../core/util.js';
 import { clientFromSettings, planSync, applyIncoming, pushPending } from '../core/sync.js';
 import { choiceDialog, confirmDialog, errorDialog, progressDialog, toast } from './dialogs.js';
 import { openSettings } from './settings.js';
+import { reviewChanges } from './review.js';
 
 let busy = false;
 
@@ -106,10 +107,25 @@ export async function doPush() {
       if (!plan.pending.length) { prog.close(); toast('Nothing left to push.'); return; }
     }
 
-    const res = await pushPending(c.gh, plan, { device: c.connection.device || 'This device', onProgress: t => prog.set(t) });
+    // Let the user check what's about to be sent, and leave things out.
+    prog.close();
+    const chosen = await reviewChanges(c.gh);
+    if (chosen === false) return;
+    if (chosen === null) { toast('Push cancelled. Nothing changed.'); return; }
+    if (!chosen.size) { toast('Nothing to push.'); return; }
+    prog = progressDialog('Pushing to GitHub');
+    prog.set('Checking the data repo');
+    plan = await planSync(c.gh);
+    if (plan.incoming.length) throw new Error('Another device pushed while you were checking your changes. Tap Push again.');
+    const selected = plan.pending.filter(p => chosen.has(p.repoPath));
+    if (!selected.length) { prog.close(); toast('Nothing to push.'); return; }
+
+    const res = await pushPending(c.gh, { ...plan, pending: selected }, { device: c.connection.device || 'This device', onProgress: t => prog.set(t) });
     prog.close();
     const total = res.changed + res.removed;
-    toast(total ? `Pushed ${plural(total, 'change')} to GitHub.` : 'GitHub already had these changes.', { kind: 'ok' });
+    const left = plan.pending.length - selected.length;
+    toast((total ? `Pushed ${plural(total, 'change')} to GitHub.` : 'GitHub already had these changes.')
+      + (left ? ` ${plural(left, 'change')} left on this device for later.` : ''), { kind: 'ok' });
   } catch (e) {
     prog.close();
     errorDialog(e, "Push didn't finish");

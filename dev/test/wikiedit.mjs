@@ -288,6 +288,65 @@ await A.keyboard.type(' Extra note.');
 await A.getByRole('tab', { name: 'Ideas' }).click();
 await A.waitForFunction(async () => ((await (await import('./js/core/store.js')).store.get('wiki', 'rope')).data.notes || '').endsWith('Extra note.'));
 
+// Drag a block by its ⋮⋮ handle (the last line goes to the top); a plain click still opens the menu
+await A.goto(BASE + '#/wiki/e/ostrich-feather');
+await A.locator('.ed-bar').waitFor();
+const blks = section(A, 'Page text').locator('.blk');
+const before = (await getPage(A, 'ostrich-feather')).body.map(b => b.type);
+const lastHandle = await blks.last().locator('.blk-handle').boundingBox();
+const firstRow = await blks.first().boundingBox();
+await A.mouse.move(lastHandle.x + lastHandle.width / 2, lastHandle.y + lastHandle.height / 2);
+await A.mouse.down();
+await A.mouse.move(lastHandle.x + 8, lastHandle.y - 30, { steps: 4 });
+await A.mouse.move(firstRow.x + 10, firstRow.y + 4, { steps: 8 });
+await A.locator('.blk-drop').waitFor();
+await A.screenshot({ path: SHOTS + 'e9-dragging.png' });
+await A.mouse.up();
+await waitSaved(A);
+d = await getPage(A, 'ostrich-feather');
+assert.deepEqual(d.body.map(b => b.type), [before[before.length - 1], ...before.slice(0, -1)]);
+assert.equal(await popup(A).count(), 0);
+await blks.first().locator('.blk-handle').click();
+await popup(A).waitFor();
+assert.ok((await popup(A).locator('.popup-label').allTextContents()).includes('Delete block'));
+await A.keyboard.press('Escape');
+await A.mouse.click(5, 5);
+
+// Crafting recipe is a picture field (and every item template has it)
+const tplRecipe = await A.evaluate(async () => {
+  const { TEMPLATES } = await import('./js/config/wiki.js');
+  return ['item', 'food', 'tool', 'weapon', 'armor', 'utility', 'block'].map(t => TEMPLATES[t].fields.find(f => f.key === 'craftingRecipe')?.kind);
+});
+assert.deepEqual(tplRecipe, Array(7).fill('image'));
+await A.goto(BASE + '#/wiki/e/rope');
+await A.locator('.ed-bar').waitFor();
+const recipeRow = A.locator('.ed-field-pic', { hasText: 'Crafting recipe' });
+assert.match(await recipeRow.textContent(), /Written as text: 3 String/);
+chooser = A.waitForEvent('filechooser');
+await recipeRow.getByRole('button', { name: 'Choose a picture or GIF' }).click();
+await (await chooser).setFiles({ name: 'recipe.gif', mimeType: 'image/gif', buffer: GIF });
+await waitSaved(A);
+d = await getPage(A, 'rope');
+assert.match(d.fields.craftingRecipe, /^images\/rope-.+\.gif$/);
+await recipeRow.locator('img').waitFor();
+await A.getByRole('button', { name: 'Done' }).click();
+await A.locator('.infobox .infobox-field-pic img').waitFor();
+await A.screenshot({ path: SHOTS + 'e10-recipe.png' });
+assert.ok((await files(A)).includes(d.fields.craftingRecipe));
+
+// Delete a page from its list with the ⋯ button (its pictures go too)
+await A.goto(BASE + `#/wiki/g/${d.group}/${d.subgroup}`);
+const ropeItem = A.locator('.page-item', { has: A.locator('.page-row-name', { hasText: /^Rope$/ }) });
+await ropeItem.getByRole('button', { name: 'More for Rope' }).click();
+await popup(A).waitFor();
+assert.deepEqual(await popup(A).locator('.popup-label').allTextContents(), ['Edit', 'Delete page']);
+await A.screenshot({ path: SHOTS + 'e11-row-menu.png' });
+await popup(A).locator('.popup-item', { hasText: 'Delete page' }).click();
+await dlg(A).getByRole('button', { name: 'Delete page' }).click();
+await A.waitForFunction(() => ![...document.querySelectorAll('.page-row-name')].some(e => e.textContent === 'Rope'));
+assert.equal(await getPage(A, 'rope'), null);
+assert.ok((await files(A)).every(f => !f.includes('rope-')));
+
 /* ---------------- Phone ---------------- */
 const B = await device('B', { viewport: { width: 384, height: 832 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2,
   userAgent: 'Mozilla/5.0 (Linux; Android 14; SM-S921B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0 Mobile Safari/537.36' });

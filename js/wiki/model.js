@@ -8,6 +8,7 @@
 //   the mod changes), overview, picture ("images/x.png", a file), versionAdded,
 //   related: [page ids], notes,
 //   fields: { health: "18 (9 hearts)", ... }       template fields, text with [[links]]
+//                                                    (picture fields hold a file path instead)
 //   variants: [{ name, note }]                       e.g. the blocks of a wood set
 //   body: [{ type, text, ... }]                      the page text, see wiki/text.js
 // }
@@ -17,6 +18,7 @@ import { store } from '../core/store.js';
 import { GROUPS, TEMPLATES } from '../config/wiki.js';
 import { isPlainObject } from '../core/util.js';
 import { linkTargets, targetId, plainText } from './text.js';
+import { isPicturePath } from './images.js';
 
 let cache = null;
 store.on(() => { cache = null; });
@@ -113,7 +115,7 @@ export function textsOf(data) {
   const out = [];
   const add = v => { if (typeof v === 'string' && v) out.push(v); };
   add(data.overview); add(data.notes);
-  if (isPlainObject(data.fields)) Object.values(data.fields).forEach(add);
+  if (isPlainObject(data.fields)) Object.values(data.fields).forEach(v => { if (!isPicturePath(v)) add(v); });
   for (const v of Array.isArray(data.variants) ? data.variants : []) { add(v?.name); add(v?.note); }
   for (const b of Array.isArray(data.body) ? data.body : []) { add(b?.text); add(b?.caption); }
   return out;
@@ -170,7 +172,8 @@ function mergeTemplates(rows) {
     if (!Array.isArray(d.fields)) continue;
     out[r.id] = {
       name: d.name || out[r.id]?.name || humanizeId(r.id),
-      fields: d.fields.filter(x => x && x.key).map(x => ({ key: String(x.key), label: String(x.label || x.key) })),
+      fields: d.fields.filter(x => x && x.key).map(x => ({
+        key: String(x.key), label: String(x.label || x.key), ...(x.kind === 'image' ? { kind: 'image' } : {}) })),
       custom: !TEMPLATES[r.id],
     };
   }

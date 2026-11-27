@@ -50,6 +50,12 @@ async function expectToast(page, re) {
   }
 }
 async function clearToasts(page) { await page.evaluate(() => document.querySelectorAll('.toast').forEach(t => t.remove())); }
+/** The "Check your changes" screen before a Push: push everything ticked. */
+async function confirmReview(page) {
+  const d = page.locator('dialog.modal-review');
+  await d.waitFor();
+  await d.locator('[data-action="push"]').click();
+}
 async function waitNoDialog(page) { await page.waitForFunction(() => !document.querySelector('dialog[open]')); }
 
 async function connect(page, deviceName, token = 'github_pat_test') {
@@ -116,6 +122,7 @@ await A.keyboard.press('Escape'); await waitNoDialog(A);
 // Push
 await clearToasts(A);
 await A.locator('.sync-btn', { hasText: 'Push' }).click();
+await confirmReview(A);
 await expectToast(A, /Pushed 3 changes/);
 let files = gh.files();
 assert.ok(files['data/wiki/ostrich.json'] && files['data/tasks/t-ostrich-ai.json'] && files['README.md']);
@@ -145,6 +152,7 @@ await expectToast(B, /Already up to date/);
 await importUpdate(B, upd([wiki('ostrich', { fields: { health: '20' } })]));
 await clearToasts(B);
 await B.locator('.sync-btn').nth(1).click();
+await confirmReview(B);
 await expectToast(B, /Pushed 1 change/);
 
 await importUpdate(A, upd([wiki('ostrich', { fields: { health: '30' } }), wiki('monkey', { name: 'Monkey', category: 'Mob' })]));
@@ -164,6 +172,7 @@ assert.equal(ostrichA.dirty, false);
 await expectBadge(A, '1'); // monkey still pending
 await clearToasts(A);
 await A.locator('.sync-btn', { hasText: 'Push' }).click();
+await confirmReview(A);
 await expectToast(A, /Pushed 1 change/);
 
 /* ---- No-overlap warning: B changes Rope, repo has A's Monkey ---- */
@@ -173,6 +182,7 @@ await B.locator('.sync-btn').nth(1).click();
 await dlg(B).getByText('The repo has newer changes').waitFor();
 await B.screenshot({ path: SHOTS + 'b3-newer-changes.png' });
 await clickInDialog(B, 'Pull them, then push');
+await confirmReview(B);
 await expectToast(B, /Pushed 1 change/);
 await B.waitForFunction(() => [...document.querySelectorAll('.wiki-unsorted .page-row-name')].some(e => e.textContent === 'Monkey'));
 assert.equal(JSON.parse(gh.files()['data/wiki/rope.json']).data.fields.stackSize, '32');
@@ -196,6 +206,7 @@ await clickInDialog(A, 'Delete');
 await expectToast(A, /deleted 1/);
 await clearToasts(A);
 await A.locator('.sync-btn', { hasText: 'Push' }).click();
+await confirmReview(A);
 await expectToast(A, /Pushed 1 change/);
 assert.equal(gh.files()['data/tasks/t-ostrich-ai.json'], undefined);
 assert.equal(gh.commitMessages()[0], 'PC: 1 removed');
@@ -205,12 +216,14 @@ await importUpdate(A, upd([wiki('monkey', { fields: { health: '8' } })]));
 gh.state.raceNext = true;
 await clearToasts(A);
 await A.locator('.sync-btn', { hasText: 'Push' }).click();
+await confirmReview(A);
 await dlg(A).getByText("Push didn't finish").waitFor();
 assert.match(await dlg(A).textContent(), /Another device pushed at the same moment/);
 await clickInDialog(A, 'OK');
 assert.notEqual(JSON.parse(gh.files()['data/wiki/monkey.json']).data.fields?.health, '8');
 await A.locator('.sync-btn', { hasText: 'Push' }).click();
 await clickInDialog(A, 'Pull them, then push');
+await confirmReview(A);
 await expectToast(A, /Pushed 1 change/);
 assert.equal(JSON.parse(gh.files()['data/wiki/monkey.json']).data.fields.health, '8');
 
@@ -221,12 +234,14 @@ await expectToast(B, /Pulled/);
 await importUpdate(B, upd([wiki('rope', { fields: { stackSize: '16' } })]));
 await expectToast(B, /Saved 1 change/);
 await B.locator('.sync-btn').nth(1).click();
+await confirmReview(B);
 await expectToast(B, /Pushed 1 change/);
 await importUpdate(A, upd([wiki('rope', { fields: { stackSize: '99' } })]));
 await A.locator('.sync-btn', { hasText: 'Push' }).click();
 await clickInDialog(A, 'Keep mine and push');
 await dlg(A).getByText('Replace these items in the repo?').waitFor();
 await clickInDialog(A, 'Replace and push');
+await confirmReview(A);
 await expectToast(A, /Pushed 1 change/);
 assert.equal(JSON.parse(gh.files()['data/wiki/rope.json']).data.fields.stackSize, '99');
 await clearToasts(B);
@@ -245,6 +260,7 @@ await clickInDialog(A, "Keep this device's versions");
 await expectToast(A, /Kept your versions of 1 item/);
 await clearToasts(A);
 await A.locator('.sync-btn', { hasText: 'Push' }).click();
+await confirmReview(A);
 await expectToast(A, /Pushed 1 change/);
 assert.equal(JSON.parse(gh.files()['data/wiki/ostrich.json']).data.fields.drops, 'Feathers, eggs');
 
@@ -259,6 +275,7 @@ await A.evaluate(async () => {
 });
 await clearToasts(A);
 await A.locator('.sync-btn', { hasText: 'Push' }).click();
+await confirmReview(A);
 await expectToast(A, /Pushed 2 changes/);
 await clearToasts(B);
 await B.locator('.sync-btn').first().click();
@@ -271,6 +288,48 @@ const roundTrip = await B.evaluate(async () => {
   return { notes: page.data.notes, w: bmp.width, type: f.blob.type };
 });
 assert.deepEqual(roundTrip, { notes: 'Sweet & sour — “tangy” 🍈', w: 16, type: 'image/png' });
+
+/* ---- Check your changes: see, leave out, undo ---- */
+await importUpdate(A, upd([wiki('ostrich', { fields: { drops: 'Feathers, eggs, meat' } }), wiki('test-x', { name: 'Test X' })]));
+await expectToast(A, /Saved 2 changes/);
+await A.locator('.sync-btn', { hasText: 'Push' }).click();
+const rv = A.locator('dialog.modal-review');
+await rv.waitFor();
+assert.equal(await rv.locator('.rv-item').count(), 2);
+assert.match(await rv.locator('[data-action="push"]').textContent(), /Push 2 changes/);
+const ostrichRow = rv.locator('.rv-item', { hasText: 'Ostrich' });
+assert.match(await ostrichRow.locator('.rv-tag').textContent(), /Changed/);
+await ostrichRow.getByRole('button', { name: 'See changes' }).click();
+await ostrichRow.locator('.rv-diff').waitFor();
+assert.match(await ostrichRow.locator('.rv-diff').textContent(), /Drops.*Feathers, eggs.*Feathers, eggs, meat/s);
+assert.match(await rv.locator('.rv-item', { hasText: 'Test X' }).locator('.rv-tag').textContent(), /New/);
+await A.screenshot({ path: SHOTS + 'a9-review.png' });
+await rv.getByRole('checkbox', { name: 'Push Test X' }).uncheck();
+assert.match(await rv.locator('[data-action="push"]').textContent(), /Push 1 change$/);
+await rv.locator('[data-action="push"]').click();
+await expectToast(A, /Pushed 1 change to GitHub. 1 change left on this device/);
+assert.equal(JSON.parse(gh.files()['data/wiki/ostrich.json']).data.fields.drops, 'Feathers, eggs, meat');
+assert.equal(gh.files()['data/wiki/test-x.json'], undefined);
+await expectBadge(A, '1');
+// Undo the new page, and undo a change to a page that's on GitHub
+await importUpdate(A, upd([wiki('rope', { fields: { stackSize: '1' } })]));
+await expectToast(A, /Saved 1 change/);
+await A.locator('.sync-btn', { hasText: 'Push' }).click();
+await rv.waitFor();
+await rv.locator('.rv-item', { hasText: 'Test X' }).getByRole('button', { name: 'Delete' }).click();
+await clickInDialog(A, 'Delete');
+await expectToast(A, /Change undone/);
+await rv.locator('.rv-item', { hasText: 'Rope' }).getByRole('button', { name: 'Undo changes' }).click();
+await clickInDialog(A, 'Undo changes');
+await rv.getByText('Nothing left to push.').waitFor();
+assert.equal(await rv.locator('[data-action="push"]').isDisabled(), true);
+await rv.getByRole('button', { name: 'Cancel' }).click();
+await expectBadge(A, null);
+const afterUndo = await A.evaluate(async () => {
+  const { store } = await import('./js/core/store.js');
+  return { x: await store.get('wiki', 'test-x'), rope: (await store.get('wiki', 'rope')).data.fields.stackSize };
+});
+assert.deepEqual(afterUndo, { x: null, rope: '99' });
 
 /* ---- Download everything again ---- */
 await A.getByRole('button', { name: 'Settings' }).click();

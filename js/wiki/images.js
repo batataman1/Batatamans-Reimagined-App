@@ -42,12 +42,21 @@ export async function saveImage(file, pageId) {
   return path;
 }
 
+/** True for a value that is one of the wiki's picture files (not text). */
+export const isPicturePath = v => typeof v === 'string' && /^images\/[^\s]+\.(png|jpe?g|gif|webp)$/i.test(v);
+
 /** Every picture file a page uses. */
 export function filesOfPage(data) {
   const out = new Set();
   if (typeof data?.picture === 'string' && data.picture) out.add(data.picture);
+  if (data?.fields && typeof data.fields === 'object') {
+    for (const v of Object.values(data.fields)) if (isPicturePath(v)) out.add(v);
+  }
   for (const b of Array.isArray(data?.body) ? data.body : []) {
     if (b?.type === 'image' && typeof b.src === 'string' && b.src) out.add(b.src);
   }
   return out;
 }
+
+/** Files that belong to a page by name (images/<page>-…), used when the page is deleted or undone. */
+export const isFileOfPage = (path, pageId) => String(path).startsWith(`images/${pageId}-`);

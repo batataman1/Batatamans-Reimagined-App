@@ -9,7 +9,8 @@
 //   Enter      new block (on an empty list item: back to normal text)
 //   Shift+Enter  line break inside the block
 //   Backspace at the start: turns a list item/heading back into text, or joins with the block above
-// Each block has a ⋮⋮ handle: turn into another type, move up or down, delete.
+// Each block has a ⋮⋮ handle: drag it to move the block, or tap it to turn the block into
+// another type, move it up or down, or delete it.
 
 import { h, uid } from '../core/util.js';
 import { openPopup, currentPopup, caretRect } from './popup.js';
@@ -82,9 +83,10 @@ export function blockEditor({ blocks, wiki, onChange, chooseImage, saveImage }) 
 
   function rowFor(item) {
     const handle = h('button', {
-      type: 'button', class: 'blk-handle', 'aria-label': 'Block options', title: 'Turn into, move or delete',
-      onclick: () => blockMenu(item, handle),
+      type: 'button', class: 'blk-handle', 'aria-label': 'Block options', title: 'Drag to move. Click to turn into, move or delete',
+      onclick: () => { if (dragged) { dragged = false; return; } blockMenu(item, handle); },
     }, '⋮⋮');
+    handle.addEventListener('pointerdown', e => startDrag(e, item, handle));
 
     let body;
     if (TEXT_TYPES.has(item.type)) {
@@ -194,6 +196,86 @@ export function blockEditor({ blocks, wiki, onChange, chooseImage, saveImage }) 
     emit();
     if (item.input) placeCaret(item.input, 'end');
   }
+
+  /* ---------- Dragging by the ⋮⋮ handle ---------- */
+
+  let dragged = false;           // a drag just ended, so the click that follows isn't a menu tap
+  const indicator = h('div', { class: 'blk-drop', 'aria-hidden': 'true' });
+
+  function startDrag(e, item, handle) {
+    if (e.button !== 0) return;
+    const startX = e.clientX, startY = e.clientY;
+    let dragging = false, target = -1, lastY = startY, raf = 0;
+    handle.setPointerCapture?.(e.pointerId);
+
+    // Where the block would land: before the first block whose middle is below the pointer.
+    const dropIndex = y => {
+      for (let i = 0; i < items.length; i++) {
+        const r = items[i].el.getBoundingClientRect();
+        if (y < r.top + r.height / 2) return i;
+      }
+      return items.length;
+    };
+    const showAt = idx => {
+      target = idx;
+      const from = indexOf(item);
+      const same = idx === from || idx === from + 1;
+      indicator.hidden = same;
+      if (same) return;
+      const rootTop = root.getBoundingClientRect().top;
+      const y = idx < items.length
+        ? items[idx].el.getBoundingClientRect().top
+        : items[items.length - 1].el.getBoundingClientRect().bottom;
+      indicator.style.top = `${y - rootTop - 1}px`;
+    };
+    // Scroll the page when dragging near the top or bottom of the screen.
+    const autoScroll = () => {
+      const edge = 70;
+      const dy = lastY < edge ? -(edge - lastY) / 4 : lastY > innerHeight - edge ? (lastY - (innerHeight - edge)) / 4 : 0;
+      if (dy) { window.scrollBy(0, dy); showAt(dropIndex(lastY)); }
+      raf = requestAnimationFrame(autoScroll);
+    };
+
+    const move = ev => {
+      lastY = ev.clientY;
+      if (!dragging) {
+        if (Math.hypot(ev.clientX - startX, ev.clientY - startY) < 6) return;
+        dragging = true;
+        closeBlockPopup();
+        document.activeElement?.blur?.();
+        item.el.classList.add('dragging');
+        root.classList.add('is-dragging');
+        root.append(indicator);
+        raf = requestAnimationFrame(autoScroll);
+      }
+      ev.preventDefault();
+      showAt(dropIndex(ev.clientY));
+    };
+    const end = ev => {
+      handle.removeEventListener('pointermove', move);
+      handle.removeEventListener('pointerup', end);
+      handle.removeEventListener('pointercancel', end);
+      cancelAnimationFrame(raf);
+      if (!dragging) return;
+      dragged = true;
+      setTimeout(() => { dragged = false; }, 0);
+      item.el.classList.remove('dragging');
+      root.classList.remove('is-dragging');
+      indicator.remove();
+      if (ev.type === 'pointercancel' || target < 0) return;
+      const from = indexOf(item);
+      if (target === from || target === from + 1) return;
+      items.splice(from, 1);
+      items.splice(target > from ? target - 1 : target, 0, item);
+      draw();
+      emit();
+    };
+    handle.addEventListener('pointermove', move);
+    handle.addEventListener('pointerup', end);
+    handle.addEventListener('pointercancel', end);
+  }
+
+  const closeBlockPopup = () => { const p = currentPopup(); if (p?.kind === 'block') p.close(); };
 
   const focusItem = (item, where) => { if (item?.input) placeCaret(item.input, where); };
   const prevText = item => { for (let i = indexOf(item) - 1; i >= 0; i--) if (items[i].input && TEXT_TYPES.has(items[i].type)) return items[i]; return null; };

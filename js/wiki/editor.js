@@ -14,7 +14,8 @@ import { topNav, fileImage } from './parts.js';
 import { richText, pageItems, linkChip } from './richtext.js';
 import { openPopup, currentPopup, closePopup } from './popup.js';
 import { blockEditor } from './blocks.js';
-import { saveImage, filesOfPage } from './images.js';
+import { saveImage, filesOfPage, isPicturePath } from './images.js';
+import { confirmDeletePage, removePageAndFiles } from './actions.js';
 
 const APP_TITLE = "Batataman's Reimagined";
 
@@ -190,20 +191,12 @@ export function editorView(el, wiki, ui, id) {
   }
 
   async function deletePage() {
-    const ok = await confirmDialog({
-      title: `Delete “${draft.name || pageName(page)}”?`,
-      body: [
-        h('p', { text: 'The page and its pictures are removed from this device now, and from GitHub when you push. They stay in the repo\'s history on GitHub.' }),
-        h('p', { class: 'muted', text: 'Links to it from other pages will show dashed.' }),
-      ],
-      confirm: 'Delete page', danger: true,
-    });
-    if (!ok) return;
+    if (!(await confirmDeletePage(draft.name || pageName(page)))) return;
     deleted = true;
     clearTimeout(timer);
     await saving;
-    await store.remove('wiki', id);
     await tidyFiles();
+    await removePageAndFiles(id, draft);
     toast('Page deleted. Push to remove it from GitHub too.');
     const place = placeOf(wiki, draft);
     ui.leaveTo(place ? `g/${place.group.id}/${place.sub.id}` : '');
@@ -323,9 +316,34 @@ export function editorView(el, wiki, ui, id) {
     const extra = Object.keys(fields).filter(k => !known.some(f => f.key === k) && fields[k] != null && fields[k] !== '');
     clear(fieldsHost,
       tpl ? null : h('p', { class: 'muted', text: 'Choose where the page goes to get its fields.' }),
-      known.map(f => fieldRow(f.key, f.label)),
+      known.map(f => (f.kind === 'image' ? pictureFieldRow(f.key, f.label) : fieldRow(f.key, f.label))),
       extra.length ? h('p', { class: 'muted small ed-extra-note', text: 'From a different template. They still show on the page; remove them if you don\'t need them.' }) : null,
-      extra.map(k => fieldRow(k, humanizeKey(k), true)));
+      extra.map(k => (isPicturePath(fields[k]) ? pictureFieldRow(k, humanizeKey(k), true) : fieldRow(k, humanizeKey(k), true))));
+  }
+
+  const removeField = key => { const f = { ...draft.fields }; delete f[key]; draft.fields = f; changed(); renderFields(); };
+
+  // A field that holds a picture or GIF, like the crafting recipe.
+  function pictureFieldRow(key, label, removable = false) {
+    const setValue = v => { draft.fields = { ...(draft.fields || {}), [key]: v }; changed(); renderFields(); };
+    const current = draft.fields?.[key];
+    const oldText = current && !isPicturePath(current) ? String(current) : '';
+    const pic = isPicturePath(current) ? current : null;
+    return h('div', { class: 'ed-field ed-field-pic' },
+      h('span', { class: 'ed-field-label', text: label }),
+      h('div', { class: 'ed-field-pic-body' },
+        pic ? fileImage(pic, label, { className: 'ed-recipe-pic', placeholder: 'Picture missing' }) : null,
+        oldText ? h('p', { class: 'muted small' }, 'Written as text: ', h('span', { class: 'ed-oldtext', text: oldText }), '. Choose a picture to replace it.') : null,
+        h('div', { class: 'button-row' },
+          h('button', {
+            type: 'button', class: 'btn btn-small',
+            onclick: async () => { const p = await chooseImage(); if (p) setValue(p); },
+          }, icon('image', { size: 16 }), pic ? 'Change picture' : 'Choose a picture or GIF'),
+          pic || oldText ? h('button', { type: 'button', class: 'btn btn-small btn-quiet', onclick: () => setValue('') }, 'Remove') : null),
+        pic ? null : h('p', { class: 'muted small', text: 'A screenshot of the recipe works well; GIFs keep their animation.' })),
+      removable ? h('button', {
+        type: 'button', class: 'icon-btn ed-x', 'aria-label': `Remove ${label}`, title: 'Remove this field', onclick: () => removeField(key),
+      }, icon('close', { size: 14 })) : null);
   }
 
   function fieldRow(key, label, removable = false) {
@@ -338,7 +356,7 @@ export function editorView(el, wiki, ui, id) {
       input,
       removable ? h('button', {
         type: 'button', class: 'icon-btn ed-x', 'aria-label': `Remove ${label}`, title: 'Remove this field',
-        onclick: () => { const f = { ...draft.fields }; delete f[key]; draft.fields = f; changed(); renderFields(); },
+        onclick: () => removeField(key),
       }, icon('close', { size: 14 })) : null);
   }
 
