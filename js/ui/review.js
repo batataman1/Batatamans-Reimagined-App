@@ -16,7 +16,7 @@ import { GROUPS, TEMPLATES } from '../config/wiki.js';
 import { builtinOrder } from '../wiki/custom.js';
 import { PICKABLE_ICONS } from '../config/icons.js';
 import { getTasks, TYPES, PRIORITIES, STATUSES, DIFFICULTIES } from '../tasks/model.js';
-import { getIdeas } from '../ideas/model.js';
+import { getIdeas, SIZE_NAMES } from '../ideas/model.js';
 
 const COLLECTION_NAMES = { wiki: 'Wiki page', tasks: 'Task', 'task-folders': 'Task folder', ideas: 'Idea', sections: 'Idea section', groups: 'Wiki group', templates: 'Wiki template' };
 // Collections whose items own pictures (images/<id>-…), shown as one entry with them.
@@ -510,6 +510,23 @@ async function ideaDiff(a, b) {
   if ((a.parent || null) !== (b.parent || null)) out.push(line('Comes under', under(a.parent), under(b.parent)));
   if (!same(a.links, b.links)) out.push(line('Links', showLinks(a.links), showLinks(b.links)));
   if (!same(a.body, b.body)) out.push(bodyDiff(a.body, b.body, txt));
+  out.push(...mapLines(a, b, 'm'));
+  if (has(a.connections) || has(b.connections)) {
+    const names = ls => (Array.isArray(ls) && ls.length ? ls.map(id => model.get(id)?.data.title || '(a deleted idea)').join(', ') : 'None');
+    if (!same(a.connections || [], b.connections || [])) out.push(line('Connections on the mind map', names(a.connections), names(b.connections)));
+  }
+  if ((a.order ?? null) !== (b.order ?? null) && (a.parent || null) === (b.parent || null) && (a.section || null) === (b.section || null)) {
+    out.push(line('Place in the list', null, 'moved'));
+  }
+  return out;
+}
+
+/** Place and bubble size on the mind map (ideas and sections). */
+function mapLines(a, b, normal) {
+  const out = [];
+  const pa = a.map ? `${a.map.x},${a.map.y}` : '', pb = b.map ? `${b.map.x},${b.map.y}` : '';
+  if (pa !== pb) out.push(line('Place on the mind map', null, pb ? 'moved' : 'placed automatically'));
+  if ((a.size || normal) !== (b.size || normal)) out.push(line('Bubble size', SIZE_NAMES[a.size || normal], SIZE_NAMES[b.size || normal]));
   return out;
 }
 
@@ -521,6 +538,7 @@ async function sectionDiff(a, b) {
   if (!same(a.name, b.name)) out.push(line('Name', a.name, b.name));
   if ((a.parent || null) !== (b.parent || null)) out.push(line('Inside', where(a.parent), where(b.parent)));
   if (a.order !== b.order && (a.parent || null) === (b.parent || null)) out.push(line('Place in the list', null, 'moved'));
+  out.push(...mapLines(a, b, 'l'));
   return out;
 }
 

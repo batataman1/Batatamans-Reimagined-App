@@ -24,6 +24,7 @@ node dev/test/wikiedit.mjs # Wiki editing: new page, editor, / menu, links, pict
 node dev/test/customize.mjs # Customize: groups, sub-groups, templates, hiding, reset, review, phone drag
 node dev/test/tasks.mjs    # Tasks & Bugs: quick add, folders, filters, list/board, task page, wiki box, phone
 node dev/test/ideas.mjs    # Ideas: sections, outline, folding, idea page, make a task, copy ideas, phone
+node dev/test/mindmap.mjs  # Mind map: select, drag, select mode, menus, connections, fold, tidy, undo, zoom, phone pinch
 node dev/test/sw.mjs       # offline loading and the "new version" prompt
 ```
 

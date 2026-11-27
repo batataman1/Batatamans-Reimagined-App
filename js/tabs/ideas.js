@@ -7,6 +7,7 @@ import { getWiki } from '../wiki/model.js';
 import { getTasks } from '../tasks/model.js';
 import { getIdeas } from '../ideas/model.js';
 import { renderIdeasView, parseIdeasPath } from '../ideas/views.js';
+import { mapState } from '../ideas/map.js';
 
 const APP_TITLE = "Batataman's Reimagined";
 const PREFS = 'brr.ideas';
@@ -14,9 +15,12 @@ const scrollByPath = new Map();
 let active = null;
 
 function loadPrefs() {
-  const p = { folded: [] };
+  // folded: fold ids (ideas, "s:<section>"); view: "list" | "map" (the last one used);
+  // mapViews: zoom and position per map; nonePos: where "Not sorted" sits on the map.
+  const p = { folded: [], view: 'list', mapViews: {}, nonePos: null };
   try { Object.assign(p, JSON.parse(localStorage.getItem(PREFS) || '{}')); } catch { /* ignore */ }
   if (!Array.isArray(p.folded)) p.folded = [];
+  if (!p.mapViews || typeof p.mapViews !== 'object') p.mapViews = {};
   return p;
 }
 
@@ -32,6 +36,10 @@ export const ideasTab = {
     const ui = {
       query: '',
       prefs: loadPrefs(),
+      mm: mapState(),
+      redraw: () => show({ keepScroll: true }),
+      /** List <-> Map: replaces the address (no extra Back step). */
+      switchTo(p) { location.replace(`#/ideas${p ? `/${p}` : ''}`); },
       savePrefs() { try { localStorage.setItem(PREFS, JSON.stringify(ui.prefs)); } catch { /* storage blocked */ } },
       isFolded: id => ui.prefs.folded.includes(id),
       toggleFold(id) {
@@ -103,7 +111,9 @@ export const ideasTab = {
     const off = store.on(d => {
       if (d?.type === 'connection' || editing()) return;
       clearTimeout(timer);
-      timer = setTimeout(() => { if (!editing()) show({ keepScroll: true }); }, 120);
+      // Not while a bubble is being touched on the mind map: that would drop the gesture.
+      const later = () => { if (ui.mmBusy) { timer = setTimeout(later, 150); return; } if (!editing()) show({ keepScroll: true }); };
+      timer = setTimeout(later, 120);
     });
 
     active = {

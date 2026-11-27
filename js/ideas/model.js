@@ -9,6 +9,9 @@
 //   body: [blocks],                                the note, same blocks as wiki pages
 //   created: ISO time                              used for sorting, never shown
 //   order: number (optional)                       place among its siblings after a drag
+//   map: { x, y } (optional)                       its place on the mind map (missing = placed automatically)
+//   size: "s" | "l" | "xl" (optional)              its bubble size (missing = normal)
+//   connections: [idea ids] (optional)             dashed lines on the mind map to other ideas
 // }
 // Siblings are sorted by `order`; an idea without one counts as the time it was made (in ms),
 // so new ideas come last and a dragged idea gets a number between its new neighbours.
@@ -16,7 +19,7 @@
 // only used when it has no parent), so moving an idea moves everything under it along.
 // Tasks made from an idea link it ({ collection: "ideas", id } in the task's links).
 //
-// Collection "sections", id "s-<random>": { name, parent: section id or null, order }
+// Collection "sections", id "s-<random>": { name, parent: section id or null, order, map?, size? }
 // Sections can hold sections, as deep as you like.
 
 import { store } from '../core/store.js';
@@ -45,7 +48,28 @@ export function normalizeIdea(d) {
     parent: typeof d.parent === 'string' && d.parent ? d.parent : null,
     links: (Array.isArray(d.links) ? d.links : []).filter(l => l && l.collection && l.id).map(l => ({ collection: String(l.collection), id: String(l.id) })),
     body: Array.isArray(d.body) ? d.body : [],
+    map: mapPoint(d.map),
+    size: BUBBLE_SIZES.includes(d.size) ? d.size : 'm',
+    connections: [...new Set((Array.isArray(d.connections) ? d.connections : []).filter(c => typeof c === 'string' && c))],
   };
+}
+
+/** An idea's data ready to save: defaults (normal size, no map place, no connections) left out. */
+export function storableIdea(d) {
+  const out = { ...d };
+  if (!out.map) delete out.map;
+  if (!out.size || out.size === 'm') delete out.size;
+  if (!Array.isArray(out.connections) || !out.connections.length) delete out.connections;
+  return out;
+}
+
+/** Bubble sizes on the mind map, smallest first ("m" = normal, never saved). */
+export const BUBBLE_SIZES = ['s', 'm', 'l', 'xl'];
+export const SIZE_NAMES = { s: 'Small', m: 'Normal', l: 'Big', xl: 'Huge' };
+
+/** A saved place on the mind map, or null. */
+export function mapPoint(p) {
+  return p && Number.isFinite(p.x) && Number.isFinite(p.y) ? { x: p.x, y: p.y } : null;
 }
 
 /** Where an idea sits among its siblings (smaller first). */
@@ -64,6 +88,9 @@ async function build() {
       id: r.id, name: String(d.name || '').trim() || 'Section',
       parent: typeof d.parent === 'string' && d.parent ? d.parent : null,
       order: typeof d.order === 'number' && Number.isFinite(d.order) ? d.order : 1000,
+      map: mapPoint(d.map),
+      size: BUBBLE_SIZES.includes(d.size) ? d.size : 'l',   // section bubbles start big
+      data: d,                                       // as saved, so changes keep every key
       dirty: !!r.dirty,
     });
   }
@@ -182,11 +209,11 @@ export function searchIdeas(list, model, wiki, query) {
 }
 
 /** Make a new idea. Returns its id. */
-export async function createIdea({ title, section = null, parent = null, links = [] }) {
+export async function createIdea({ title, section = null, parent = null, links = [], map = null }) {
   const id = newIdeaId();
   await store.put('ideas', id, {
     title: String(title).trim(), section: section || null, parent: parent || null,
-    ...(links.length ? { links } : {}), created: new Date().toISOString(),
+    ...(links.length ? { links } : {}), ...(map ? { map } : {}), created: new Date().toISOString(),
   });
   return id;
 }

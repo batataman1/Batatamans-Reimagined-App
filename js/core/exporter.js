@@ -59,7 +59,8 @@ export async function ideasAsText() {
     const pad = '  '.repeat(depth);
     const links = i.data.links.map(l => `${l.collection}/${l.id}`).join(', ');
     const made = tasks.linkedTo('ideas', i.id).map(t => `${t.id} (${STATUS[t.data.status] || 'To do'})`).join(', ');
-    const out = [[`${pad}- ${i.id}`, i.data.title || '(untitled)', made ? `tasks: ${made}` : '', links ? `links: ${links}` : ''].filter(Boolean).join(' | ')];
+    const conns = i.data.connections.filter(c => model.get(c)).join(', ');
+    const out = [[`${pad}- ${i.id}`, i.data.title || '(untitled)', made ? `tasks: ${made}` : '', links ? `links: ${links}` : '', conns ? `connected to: ${conns}` : ''].filter(Boolean).join(' | ')];
     const n = note(i);
     if (n) out.push(`${pad}  note: ${n}`);
     for (const k of model.kidsOf(i.id)) out.push(...line(k, depth + 1));

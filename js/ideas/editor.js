@@ -15,6 +15,7 @@ import { blockEditor } from '../wiki/blocks.js';
 import { saveImage, filesOfPage } from '../wiki/images.js';
 import { getTasks } from '../tasks/model.js';
 import { linkedTaskItem } from '../tasks/views.js';
+import { storableIdea } from './model.js';
 import { sectionSelect, fillUnderSelect, confirmDeleteIdea, removeIdea, makeTaskDialog, linkTaskDialog } from './actions.js';
 
 const APP_TITLE = "Batataman's Reimagined";
@@ -286,5 +287,5 @@ function cleaned(d) {
   if (!Array.isArray(out.body) || !out.body.length) delete out.body;
   if (!out.section) out.section = null;
   if (!out.parent) out.parent = null;
-  return out;
+  return storableIdea(out);
 }

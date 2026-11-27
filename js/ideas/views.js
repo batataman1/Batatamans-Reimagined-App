@@ -5,6 +5,7 @@
 //   s/none         ideas without a section ("Not sorted")
 //   s/<section>    a section (its sub-sections' ideas shown below its own)
 //   i/<idea>       an idea's page (ideas/editor.js)
+//   m/<key>        the mind map of all ideas (m/all), Not sorted (m/none) or a section (ideas/map.js)
 //
 // The list is an outline: an idea that comes under another idea is indented below it, with a
 // fold button. Which ideas are folded is remembered on this device (not synced).
@@ -19,8 +20,9 @@ import { topNav } from '../wiki/parts.js';
 import { nameFor } from '../wiki/text.js';
 import { orderBetween } from '../wiki/custom.js';
 import { nameDialog } from '../tasks/views.js';
-import { createIdea, newSectionId, searchIdeas } from './model.js';
+import { createIdea, newSectionId, searchIdeas, storableIdea } from './model.js';
 import { ideaEditorView } from './editor.js';
+import { mapScreen } from './map.js';
 import { sectionSelect, addUnderDialog, moveIdeaDialog, confirmDeleteIdea, removeIdea, makeTaskDialog, moveIdeaTo } from './actions.js';
 import { filesOfPage, isFileOfPage } from '../wiki/images.js';
 
@@ -30,6 +32,7 @@ export function parseIdeasPath(path) {
   const [kind, a] = String(path || '').split('/').map(x => decodeURIComponent(x));
   if (kind === 'i' && a) return { view: 'idea', id: a };
   if (kind === 's' && a) return { view: 'list', section: a };
+  if (kind === 'm' && a) return { view: 'map', section: a };
   return { view: 'list', section: 'all' };
 }
 
@@ -37,12 +40,13 @@ export function renderIdeasView(el, path, ctx) {
   const route = parseIdeasPath(path);
   document.title = `Ideas · ${APP_TITLE}`;
   if (route.view === 'idea') return ideaEditorView(el, ctx, route.id);
-  return homeView(el, ctx, route.section);
+  return homeView(el, ctx, route.section, route.view);
 }
 
 /* ---------- Small pieces ---------- */
 
-const sectionHref = key => (key === 'all' ? '#/ideas' : `#/ideas/s/${encodeURIComponent(key)}`);
+const sectionHref = (key, view = 'list') => (view === 'map' ? `#/ideas/m/${encodeURIComponent(key)}`
+  : key === 'all' ? '#/ideas' : `#/ideas/s/${encodeURIComponent(key)}`);
 const ideaHref = id => `#/ideas/i/${encodeURIComponent(id)}`;
 
 function sectionTitle(model, key) {
@@ -169,7 +173,7 @@ function sectionPanel(ctx, key) {
   panel.classList.toggle('open', !!ui.sectionsOpen);
 
   const link = (k, label, depth = 0) => h('a', {
-    class: 'tk-flink', href: sectionHref(k), 'aria-current': k === key ? 'page' : null, dataset: { key: k },
+    class: 'tk-flink', href: sectionHref(k, ui.prefs.view), 'aria-current': k === key ? 'page' : null, dataset: { key: k },
     style: { '--depth': depth },
     onclick: () => { ui.sectionsOpen = false; },
   }, h('span', { class: 'tk-fname', text: label }), h('span', { class: 'tk-fcount', 'aria-label': plural(model.count(k), 'idea'), text: String(model.count(k) || '') }));
@@ -201,7 +205,7 @@ function sectionPanel(ctx, key) {
   return h('aside', { class: 'tk-side' }, toggle, panel);
 }
 
-const saveSection = (s, change) => store.put('sections', s.id, { name: s.name, parent: s.parent, order: s.order, ...change });
+export const saveSection = (s, change) => store.put('sections', s.id, { ...s.data, name: s.name, parent: s.parent, order: s.order, ...change });
 
 async function moveSection(model, parent, from, to) {
   const sibs = [...model.childrenOf(parent)];
@@ -308,14 +312,15 @@ async function deleteSection(s, ctx) {
       for (const i of ideas) await store.remove('ideas', i.id);
     } else {
       // Only the top ideas move; the ideas under them come along.
-      for (const i of ideas) if (!model.parentOf(i.id)) await store.put('ideas', i.id, { ...i.data, section: null, parent: null });
+      for (const i of ideas) if (!model.parentOf(i.id)) await store.put('ideas', i.id, storableIdea({ ...i.data, section: null, parent: null }));
     }
     for (const id of [...subs, s.id]) await store.remove('sections', id);
   } catch (err) { errorDialog(err, "The section couldn't be deleted"); return; }
   toast(choice === 'all' && ideas.length
     ? `Section and ${plural(ideas.length, 'idea')} deleted. Push to remove them from GitHub too.`
     : ideas.length ? 'Section deleted; its ideas are in Not sorted now. Push to update GitHub.' : 'Section deleted. Push to remove it from GitHub too.');
-  if (location.hash === sectionHref(s.id) || subs.some(id => location.hash === sectionHref(id))) ui.leaveTo(s.parent ? `s/${s.parent}` : '');
+  const here = id => location.hash === sectionHref(id) || location.hash === sectionHref(id, 'map');
+  if (here(s.id) || subs.some(here)) ui.leaveTo(s.parent ? `${ui.prefs.view === 'map' ? 'm' : 's'}/${s.parent}` : (ui.prefs.view === 'map' ? 'm/all' : ''));
 }
 
 /* ---------- Dragging ideas ---------- */
@@ -415,8 +420,9 @@ function ideaDrag(el, handle, idea, ctx) {
 
 /* ---------- The main screen ---------- */
 
-function homeView(el, ctx, key) {
+function homeView(el, ctx, key, mode = 'list') {
   const { model, wiki, ui } = ctx;
+  if (ui.prefs.view !== mode) { ui.prefs.view = mode; ui.savePrefs(); }
   if (key !== 'all' && key !== 'none' && !model.section(key)) {
     clear(el, topNav(ui, '', { href: '#/ideas', label: 'Ideas' }),
       h('div', { class: 'notice' }, h('p', { text: "This section doesn't exist (anymore)." })));
@@ -485,7 +491,19 @@ function homeView(el, ctx, key) {
       !own.length ? h('p', { class: 'muted tk-empty', text: subs.length ? 'No ideas straight in this section yet. Type one above and press Enter.' : 'Nothing here yet. Type an idea above and press Enter.' }) : null,
       subs.length ? h('div', { class: 'id-subs id-subs-top' }, subs.map(s => sectionBlock(s, ctx))) : null);
   }
-  drawContent();
+  /* List or mind map */
+  const listPath = key === 'all' ? '' : `s/${key}`;
+  const viewBtn = (v, label, ic) => h('a', {
+    class: 'seg-btn', role: 'button', 'aria-pressed': String(mode === v), href: v === 'map' ? `#/ideas/m/${encodeURIComponent(key)}` : `#/ideas${listPath ? `/${listPath}` : ''}`,
+    onclick: e => { e.preventDefault(); if (mode !== v) ui.switchTo(v === 'map' ? `m/${key}` : listPath); },
+  }, icon(ic, { size: 14 }), label);
+  let screen = null;
+  if (mode === 'map') {
+    screen = mapScreen(ctx, key);
+    clear(content, screen ? screen.el : h('p', { class: 'muted tk-empty', text: 'Nothing here yet. Type an idea above and press Enter.' }));
+  } else {
+    drawContent();
+  }
 
   const n = model.count(key);
   clear(el, h('div', { class: 'tk-layout id-layout' },
@@ -495,9 +513,12 @@ function homeView(el, ctx, key) {
         ? topNav(ui, model.section(key).parent ? `s/${model.section(key).parent}` : '', { href: '#/ideas', label: 'Ideas' },
           ...model.path(key).slice(0, -1).map(s => ({ href: sectionHref(s.id), label: s.name })), { label: title })
         : null,
-      h('div', { class: 'tab-head tk-head' }, h('h1', { text: title }), h('span', { class: 'muted', text: plural(n, 'idea') })),
+      h('div', { class: 'tab-head tk-head' }, h('h1', { text: title }), h('span', { class: 'muted', text: plural(n, 'idea') }),
+        h('div', { class: 'seg head-action', role: 'group', 'aria-label': 'View' }, viewBtn('list', 'List', 'tasks'), viewBtn('map', 'Map', 'mindmap'))),
       h('div', { class: 'tk-add' }, addInput,
         h('button', { type: 'button', class: 'btn btn-primary tk-add-btn', onclick: add, 'aria-label': 'Add' }, icon('plus', { size: 18 }), h('span', { class: 'tk-add-label', text: 'Add' }))),
-      h('div', { class: 'tk-filters' }, search),
+      mode === 'list' ? h('div', { class: 'tk-filters' }, search) : null,
       content)));
+  screen?.mounted();
+  return screen ? () => screen.cleanup() : null;
 }
