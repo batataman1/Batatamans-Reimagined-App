@@ -8,6 +8,7 @@ import { getTasks } from '../tasks/model.js';
 import { getIdeas } from '../ideas/model.js';
 import { renderIdeasView, parseIdeasPath } from '../ideas/views.js';
 import { mapState } from '../ideas/map.js';
+import { getDrawings } from '../draw/model.js';
 
 const APP_TITLE = "Batataman's Reimagined";
 const PREFS = 'brr.ideas';
@@ -15,7 +16,7 @@ const scrollByPath = new Map();
 let active = null;
 
 function loadPrefs() {
-  // folded: fold ids (ideas, "s:<section>"); view: "list" | "map" (the last one used);
+  // folded: fold ids (ideas, "s:<section>"); view: "list" | "map" | "draw" (the last one used);
   // mapViews: zoom and position per map; nonePos: where "Not sorted" sits on the map.
   const p = { folded: [], view: 'list', mapViews: {}, nonePos: null };
   try { Object.assign(p, JSON.parse(localStorage.getItem(PREFS) || '{}')); } catch { /* ignore */ }
@@ -77,7 +78,7 @@ export const ideasTab = {
         leaveView = null;
         await leave();
       }
-      const [model, tasks, wiki] = await Promise.all([getIdeas(), getTasks(), getWiki()]);
+      const [model, tasks, wiki, drawings] = await Promise.all([getIdeas(), getTasks(), getWiki(), getDrawings()]);
       if (mine !== token) return;
 
       const y = window.scrollY;
@@ -85,7 +86,7 @@ export const ideasTab = {
       const focusKey = el.contains(focused) ? focused?.dataset?.focusKey : null;
       const selection = focusKey ? [focused.selectionStart, focused.selectionEnd] : null;
 
-      leaveView = renderIdeasView(el, current, { model, tasks, wiki, ui }) || null;
+      leaveView = renderIdeasView(el, current, { model, tasks, wiki, drawings, ui }) || null;
 
       if (keepScroll) window.scrollTo(0, y);
       else if (freshVisit || !scrollByPath.has(current)) window.scrollTo(0, 0);
@@ -105,9 +106,10 @@ export const ideasTab = {
     };
     el.addEventListener('click', onClick);
 
-    // Redraw when something changes on this device; the idea page keeps its own screen while you type.
+    // Redraw when something changes on this device; the idea page and the drawing editor keep
+    // their own screen while you type or draw.
     let timer = null;
-    const editing = () => parseIdeasPath(current).view === 'idea';
+    const editing = () => ['idea', 'drawing'].includes(parseIdeasPath(current).view);
     const off = store.on(d => {
       if (d?.type === 'connection' || editing()) return;
       clearTimeout(timer);

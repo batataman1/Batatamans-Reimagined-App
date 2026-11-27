@@ -17,6 +17,7 @@ import { getTasks } from '../tasks/model.js';
 import { linkedTaskItem } from '../tasks/views.js';
 import { storableIdea } from './model.js';
 import { sectionSelect, fillUnderSelect, confirmDeleteIdea, removeIdea, makeTaskDialog, linkTaskDialog } from './actions.js';
+import { ideaDrawingsBox } from '../draw/gallery.js';
 
 const APP_TITLE = "Batataman's Reimagined";
 
@@ -210,6 +211,9 @@ export function ideaEditorView(el, ctx, id) {
   const offTasks = store.on(d => { if (d?.type === 'sync' || d?.collection === 'tasks') drawTasks(); });
   drawTasks();
 
+  // Drawings that belong to this idea (made in the idea's section).
+  const drawingsBox = ideaDrawingsBox({ ideaId: id, section: () => draft.section || null, ui });
+
   // The path above the title follows the section, the idea it comes under and the title.
   const navHost = h('div', { class: 'tk-navhost' });
   function drawNav() {
@@ -252,6 +256,7 @@ export function ideaEditorView(el, ctx, id) {
             onclick: async () => { await flush(); makeTaskDialog({ id, data: cleanedForTask(draft) }); },
           }, icon('plus', { size: 14 }), 'Make a task'),
           h('button', { type: 'button', class: 'btn btn-small btn-quiet', onclick: () => linkTaskDialog({ id, data: draft }) }, icon('tasks', { size: 14 }), 'Link a task you already have'))),
+      h('section', { class: 'ed-section id-drawings' }, h('h2', { text: 'Drawings' }), drawingsBox.el),
       h('section', { class: 'ed-section ed-danger' },
         h('button', { type: 'button', class: 'btn btn-small btn-danger-outline', onclick: deleteIdea }, icon('trash', { size: 16 }), 'Delete this idea')));
   }
@@ -260,6 +265,7 @@ export function ideaEditorView(el, ctx, id) {
 
   return async () => {
     offTasks();
+    drawingsBox.cleanup();
     document.removeEventListener('visibilitychange', onHide);
     window.removeEventListener('pagehide', flush);
     closePopup();

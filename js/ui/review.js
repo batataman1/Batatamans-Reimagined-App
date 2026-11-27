@@ -17,10 +17,17 @@ import { builtinOrder } from '../wiki/custom.js';
 import { PICKABLE_ICONS } from '../config/icons.js';
 import { getTasks, TYPES, PRIORITIES, STATUSES, DIFFICULTIES } from '../tasks/model.js';
 import { getIdeas, SIZE_NAMES, LINE_STYLES, normalizeConnections } from '../ideas/model.js';
+import { isDrawingFile, normalizePalette } from '../draw/model.js';
 
-const COLLECTION_NAMES = { wiki: 'Wiki page', tasks: 'Task', 'task-folders': 'Task folder', ideas: 'Idea', sections: 'Idea section', groups: 'Wiki group', templates: 'Wiki template' };
-// Collections whose items own pictures (images/<id>-…), shown as one entry with them.
-const OWNS_PICTURES = new Set(['wiki', 'tasks', 'ideas']);
+const COLLECTION_NAMES = {
+  wiki: 'Wiki page', tasks: 'Task', 'task-folders': 'Task folder', ideas: 'Idea', sections: 'Idea section',
+  groups: 'Wiki group', templates: 'Wiki template', drawings: 'Drawing', palettes: 'Colour palette',
+};
+// Collections whose items own pictures (images/<id>-…; a drawing owns drawings/<id>.png),
+// shown as one entry with them.
+const OWNS_PICTURES = new Set(['wiki', 'tasks', 'ideas', 'drawings']);
+const ownsFile = (e, path) => isFileOfPage(path, e.main.row.id) || filesOfPage(e.main.row.data).has(path)
+  || (e.main.row.collection === 'drawings' && isDrawingFile(path, e.main.row.id));
 const STATUS_TEXT = { new: 'New', changed: 'Changed', deleted: 'Deleted' };
 
 /* ---------- Grouping what's pending ---------- */
@@ -36,7 +43,7 @@ async function loadEntries() {
     if (OWNS_PICTURES.has(item.row.collection)) pages.push(e);
   }
   for (const item of pending.filter(p => p.kind === 'file')) {
-    const owner = pages.find(e => isFileOfPage(item.row.path, e.main.row.id) || filesOfPage(e.main.row.data).has(item.row.path));
+    const owner = pages.find(e => ownsFile(e, item.row.path));
     if (owner) owner.files.push({ item, status: status(item) });
     else entries.push({ key: item.repoPath, main: item, files: [], status: status(item) });
   }
@@ -45,7 +52,8 @@ async function loadEntries() {
 }
 
 const kindText = e => {
-  const what = e.main.kind === 'file' ? 'Picture'
+  if (e.main.row.collection === 'drawings') return 'Drawing';
+  const what = e.main.kind === 'file' ? (e.main.row.path?.startsWith('drawings/') ? 'Drawing picture' : 'Picture')
     : e.main.row.collection === 'tasks' && e.main.row.data?.type === 'bug' ? 'Bug'
     : (COLLECTION_NAMES[e.main.row.collection] || humanizeKey(e.main.row.collection));
   return e.files.length ? `${what} + ${plural(e.files.length, 'picture')}` : what;
@@ -67,7 +75,7 @@ const statusText = e => (isReset(e) ? 'Reset to built-in' : STATUS_TEXT[shownSta
 function editAddress(e) {
   if (e.main.kind !== 'record' || e.status === 'deleted') return null;
   const id = encodeURIComponent(e.main.row.id);
-  return { wiki: `#/wiki/e/${id}`, groups: `#/wiki/c/g/${id}`, templates: `#/wiki/c/t/${id}`, tasks: `#/tasks/t/${id}`, ideas: `#/ideas/i/${id}` }[e.main.row.collection] || null;
+  return { wiki: `#/wiki/e/${id}`, groups: `#/wiki/c/g/${id}`, templates: `#/wiki/c/t/${id}`, tasks: `#/tasks/t/${id}`, ideas: `#/ideas/i/${id}`, drawings: `#/ideas/draw/${id}` }[e.main.row.collection] || null;
 }
 
 /* ---------- The screen ---------- */
@@ -180,7 +188,7 @@ export async function reviewChanges(gh) {
       // If it's open in an editor, leave the editor first so it doesn't save it again.
       const open = editAddress({ ...e, status: 'changed' });
       if (open && (location.hash === open || location.hash.startsWith(`${open}/`))) {
-        location.hash = { wiki: `#/wiki/p/${encodeURIComponent(e.main.row.id)}`, tasks: '#/tasks', ideas: '#/ideas' }[e.main.row.collection] || '#/wiki/c';
+        location.hash = { wiki: `#/wiki/p/${encodeURIComponent(e.main.row.id)}`, tasks: '#/tasks', ideas: '#/ideas', drawings: '#/ideas/d/all' }[e.main.row.collection] || '#/wiki/c';
         await new Promise(r => setTimeout(r, 400));
       }
       await discard(e, gh, base);
@@ -243,10 +251,12 @@ async function describe(e, gh, base) {
         : kind === 'task-folders' ? await folderDiff(e.status === 'new' ? null : before, after)
         : kind === 'ideas' ? await ideaDiff(e.status === 'new' ? null : before, after)
         : kind === 'sections' ? await sectionDiff(e.status === 'new' ? null : before, after)
+        : kind === 'drawings' ? await drawingDiff(e.status === 'new' ? null : before, after)
+        : kind === 'palettes' ? paletteDiff(e.status === 'new' ? null : before, after, e.main.row.id)
         : genericDiff(before, after);
       out.push(lines.length
         ? h('dl', { class: 'rv-diff' }, lines)
-        : h('p', { class: 'muted small', text: 'Saved again, but nothing in it is different from GitHub.' }));
+        : h('p', { class: 'muted small', text: e.main.row.collection === 'drawings' && e.files.length ? 'The picture changed (below).' : 'Saved again, but nothing in it is different from GitHub.' }));
     }
   }
 
@@ -256,6 +266,7 @@ async function describe(e, gh, base) {
         ? h('span', { class: 'rv-pic-gone', text: 'Removed' })
         : h('img', { src: objectUrl(item.row.blob), alt: '' }),
       h('figcaption', { class: 'small', text: `${STATUS_TEXT[status]} picture` })))));
+    if (e.main.row.collection === 'drawings' || e.main.row.path?.startsWith('drawings/')) out[out.length - 1].classList.add('rv-pics-drawing');
   }
   return out;
 }
@@ -542,6 +553,37 @@ async function sectionDiff(a, b) {
   if ((a.parent || null) !== (b.parent || null)) out.push(line('Inside', where(a.parent), where(b.parent)));
   if (a.order !== b.order && (a.parent || null) === (b.parent || null)) out.push(line('Place in the list', null, 'moved'));
   out.push(...mapLines(a, b, 'l'));
+  return out;
+}
+
+/* Drawings and palettes */
+
+async function drawingDiff(a, b) {
+  const model = await getIdeas();
+  const sec = id => (id ? (model.section(id) ? model.path(id).map(s => s.name).join(' › ') : '(a deleted section)') : 'Not sorted');
+  const idea = id => (id ? (model.get(id)?.data.title || '(a deleted idea)') : 'None');
+  const kind = d => `${d.kind === 'free' ? 'Free drawing' : 'Pixel art'}, ${d.width} × ${d.height}`;
+  if (!a) {
+    const out = [line('Name', null, b.name), line('Kind', null, kind(b)), line('Section', null, sec(b.section))];
+    if (b.idea) out.push(line('Belongs to idea', null, idea(b.idea)));
+    return out;
+  }
+  const out = [];
+  if (!same(a.name, b.name)) out.push(line('Name', a.name, b.name));
+  if ((a.section || null) !== (b.section || null)) out.push(line('Section', sec(a.section), sec(b.section)));
+  if ((a.idea || null) !== (b.idea || null)) out.push(line('Belongs to idea', idea(a.idea), idea(b.idea)));
+  return out;
+}
+
+function paletteDiff(a, b, id) {
+  const A = a ? normalizePalette(id, a) : null, B = normalizePalette(id, b);
+  const swatches = list => h('span', { class: 'rv-swatches' }, list.map(c => h('span', { class: 'rv-swatch', style: { '--c': c }, title: c })));
+  if (!A) return [line('Name', null, B.name), [h('dt', { text: 'Colours' }), h('dd', B.colors.length ? swatches(B.colors) : h('span', { class: 'muted', text: 'none yet' }))]];
+  const out = [];
+  if (A.name !== B.name) out.push(line('Name', A.name, B.name));
+  const added = B.colors.filter(c => !A.colors.includes(c)), removed = A.colors.filter(c => !B.colors.includes(c));
+  if (added.length) out.push([h('dt', { text: 'Colours added' }), h('dd', swatches(added))]);
+  if (removed.length) out.push([h('dt', { text: 'Colours taken out' }), h('dd', swatches(removed))]);
   return out;
 }
 

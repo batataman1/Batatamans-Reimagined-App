@@ -6,6 +6,8 @@
 //   s/<section>    a section (its sub-sections' ideas shown below its own)
 //   i/<idea>       an idea's page (ideas/editor.js)
 //   m/<key>        the mind map of all ideas (m/all), Not sorted (m/none) or a section (ideas/map.js)
+//   d/<key>        the drawings of all ideas, Not sorted or a section (draw/gallery.js)
+//   draw/<id>      a drawing, full screen (draw/editor.js)
 //
 // The list is an outline: an idea that comes under another idea is indented below it, with a
 // fold button. Which ideas are folded is remembered on this device (not synced).
@@ -25,6 +27,8 @@ import { ideaEditorView } from './editor.js';
 import { mapScreen } from './map.js';
 import { sectionSelect, addUnderDialog, moveIdeaDialog, confirmDeleteIdea, removeIdea, makeTaskDialog, moveIdeaTo } from './actions.js';
 import { filesOfPage, isFileOfPage } from '../wiki/images.js';
+import { galleryContent, newDrawingDialog } from '../draw/gallery.js';
+import { drawingEditorView } from '../draw/editor.js';
 
 const APP_TITLE = "Batataman's Reimagined";
 
@@ -33,6 +37,8 @@ export function parseIdeasPath(path) {
   if (kind === 'i' && a) return { view: 'idea', id: a };
   if (kind === 's' && a) return { view: 'list', section: a };
   if (kind === 'm' && a) return { view: 'map', section: a };
+  if (kind === 'd' && a) return { view: 'draw', section: a };
+  if (kind === 'draw' && a) return { view: 'drawing', id: a };
   return { view: 'list', section: 'all' };
 }
 
@@ -40,13 +46,17 @@ export function renderIdeasView(el, path, ctx) {
   const route = parseIdeasPath(path);
   document.title = `Ideas · ${APP_TITLE}`;
   if (route.view === 'idea') return ideaEditorView(el, ctx, route.id);
+  if (route.view === 'drawing') return drawingEditorView(el, ctx, route.id);
   return homeView(el, ctx, route.section, route.view);
 }
 
 /* ---------- Small pieces ---------- */
 
 const sectionHref = (key, view = 'list') => (view === 'map' ? `#/ideas/m/${encodeURIComponent(key)}`
+  : view === 'draw' ? `#/ideas/d/${encodeURIComponent(key)}`
   : key === 'all' ? '#/ideas' : `#/ideas/s/${encodeURIComponent(key)}`);
+/** The address (after #/ideas/) of a section in a view: list, map or drawings. */
+const sectionPath = (key, view = 'list') => (view === 'map' ? `m/${key}` : view === 'draw' ? `d/${key}` : key === 'all' ? '' : `s/${key}`);
 const ideaHref = id => `#/ideas/i/${encodeURIComponent(id)}`;
 
 function sectionTitle(model, key) {
@@ -160,7 +170,11 @@ function sectionBlock(s, ctx, depth = 0) {
 /* ---------- Sections panel (like the task folders) ---------- */
 
 function sectionPanel(ctx, key) {
-  const { model, ui } = ctx;
+  const { model, ui, drawings } = ctx;
+  // In the Drawings view the counts are drawings; otherwise ideas.
+  const drawingView = ui.prefs.view === 'draw' && drawings;
+  const countOf = k => (drawingView ? drawings.inSection(k, model).length : model.count(k));
+  const noun = drawingView ? 'drawing' : 'idea';
   const panel = h('div', { class: 'tk-side-panel', id: 'id-sections' });
   const toggle = h('button', {
     type: 'button', class: 'btn tk-side-toggle', 'aria-expanded': String(!!ui.sectionsOpen), 'aria-controls': 'id-sections',
@@ -176,7 +190,7 @@ function sectionPanel(ctx, key) {
     class: 'tk-flink', href: sectionHref(k, ui.prefs.view), 'aria-current': k === key ? 'page' : null, dataset: { key: k },
     style: { '--depth': depth },
     onclick: () => { ui.sectionsOpen = false; },
-  }, h('span', { class: 'tk-fname', text: label }), h('span', { class: 'tk-fcount', 'aria-label': plural(model.count(k), 'idea'), text: String(model.count(k) || '') }));
+  }, h('span', { class: 'tk-fname', text: label }), h('span', { class: 'tk-fcount', 'aria-label': plural(countOf(k), noun), text: String(countOf(k) || '') }));
 
   const list = parent => {
     const box = h('div', { class: 'tk-flist' }, model.childrenOf(parent).map((s, i, sibs) => {
@@ -250,7 +264,7 @@ function newSectionDialog(ctx, parent) {
       const order = sibs.length ? sibs[sibs.length - 1].order + 10 : 10;
       const id = newSectionId();
       await store.put('sections', id, { name, parent: p, order });
-      ui.go(`s/${id}`);
+      ui.go(sectionPath(id, ui.prefs.view));
     },
   });
 }
@@ -319,8 +333,8 @@ async function deleteSection(s, ctx) {
   toast(choice === 'all' && ideas.length
     ? `Section and ${plural(ideas.length, 'idea')} deleted. Push to remove them from GitHub too.`
     : ideas.length ? 'Section deleted; its ideas are in Not sorted now. Push to update GitHub.' : 'Section deleted. Push to remove it from GitHub too.');
-  const here = id => location.hash === sectionHref(id) || location.hash === sectionHref(id, 'map');
-  if (here(s.id) || subs.some(here)) ui.leaveTo(s.parent ? `${ui.prefs.view === 'map' ? 'm' : 's'}/${s.parent}` : (ui.prefs.view === 'map' ? 'm/all' : ''));
+  const here = id => ['list', 'map', 'draw'].some(v => location.hash === sectionHref(id, v));
+  if (here(s.id) || subs.some(here)) ui.leaveTo(sectionPath(s.parent || 'all', ui.prefs.view));
 }
 
 /* ---------- Dragging ideas ---------- */
@@ -491,33 +505,38 @@ function homeView(el, ctx, key, mode = 'list') {
       !own.length ? h('p', { class: 'muted tk-empty', text: subs.length ? 'No ideas straight in this section yet. Type one above and press Enter.' : 'Nothing here yet. Type an idea above and press Enter.' }) : null,
       subs.length ? h('div', { class: 'id-subs id-subs-top' }, subs.map(s => sectionBlock(s, ctx))) : null);
   }
-  /* List or mind map */
-  const listPath = key === 'all' ? '' : `s/${key}`;
+  /* List, mind map or drawings */
   const viewBtn = (v, label, ic) => h('a', {
-    class: 'seg-btn', role: 'button', 'aria-pressed': String(mode === v), href: v === 'map' ? `#/ideas/m/${encodeURIComponent(key)}` : `#/ideas${listPath ? `/${listPath}` : ''}`,
-    onclick: e => { e.preventDefault(); if (mode !== v) ui.switchTo(v === 'map' ? `m/${key}` : listPath); },
-  }, icon(ic, { size: 14 }), label);
+    class: 'seg-btn', role: 'button', 'aria-pressed': String(mode === v), href: sectionHref(key, v), dataset: { view: v },
+    onclick: e => { e.preventDefault(); if (mode !== v) ui.switchTo(sectionPath(key, v)); },
+  }, icon(ic, { size: 14 }), h('span', { class: 'seg-label', text: label }));
   const addRow = h('div', { class: 'tk-add' }, addInput,
     h('button', { type: 'button', class: 'btn btn-primary tk-add-btn', onclick: add, 'aria-label': 'Add' }, icon('plus', { size: 18 }), h('span', { class: 'tk-add-label', text: 'Add' })));
   let screen = null;
   if (mode === 'map') {
     screen = mapScreen(ctx, key, addRow);   // the add box goes with the map (it stays in full screen)
     clear(content, screen ? screen.el : h('p', { class: 'muted tk-empty', text: 'Nothing here yet. Type an idea above and press Enter.' }));
+  } else if (mode === 'draw') {
+    clear(content, galleryContent(ctx, key));
   } else {
     drawContent();
   }
+  const newDrawingRow = mode === 'draw' ? h('div', { class: 'dg-head' },
+    h('button', { type: 'button', class: 'btn btn-primary', onclick: () => newDrawingDialog(ctx, { section: key === 'all' || key === 'none' ? null : key }) },
+      icon('plus', { size: 16 }), 'New drawing'),
+    h('span', { class: 'muted small', text: 'Pixel art and free drawings. Tap one to draw.' })) : null;
 
-  const n = model.count(key);
+  const n = mode === 'draw' ? ctx.drawings.inSection(key, model).length : model.count(key);
   clear(el, h('div', { class: 'tk-layout id-layout' },
     sectionPanel(ctx, key),
     h('div', { class: 'tk-main' },
       key !== 'all' && key !== 'none'
-        ? topNav(ui, model.section(key).parent ? `s/${model.section(key).parent}` : '', { href: '#/ideas', label: 'Ideas' },
-          ...model.path(key).slice(0, -1).map(s => ({ href: sectionHref(s.id), label: s.name })), { label: title })
+        ? topNav(ui, model.section(key).parent ? sectionPath(model.section(key).parent, mode) : sectionPath('all', mode), { href: sectionHref('all', mode), label: 'Ideas' },
+          ...model.path(key).slice(0, -1).map(s => ({ href: sectionHref(s.id, mode), label: s.name })), { label: title })
         : null,
-      h('div', { class: 'tab-head tk-head' }, h('h1', { text: title }), h('span', { class: 'muted', text: plural(n, 'idea') }),
-        h('div', { class: 'seg head-action', role: 'group', 'aria-label': 'View' }, viewBtn('list', 'List', 'tasks'), viewBtn('map', 'Map', 'mindmap'))),
-      screen ? null : addRow,
+      h('div', { class: 'tab-head tk-head' }, h('h1', { text: title }), h('span', { class: 'muted', text: plural(n, mode === 'draw' ? 'drawing' : 'idea') }),
+        h('div', { class: 'seg head-action id-views', role: 'group', 'aria-label': 'View' }, viewBtn('list', 'List', 'tasks'), viewBtn('map', 'Map', 'mindmap'), viewBtn('draw', 'Drawings', 'brush'))),
+      screen || mode === 'draw' ? newDrawingRow : addRow,
       mode === 'list' ? h('div', { class: 'tk-filters' }, search) : null,
       content)));
   screen?.mounted();
