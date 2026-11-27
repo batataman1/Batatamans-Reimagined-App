@@ -15,8 +15,11 @@ import { filesOfPage, isFileOfPage, isPicturePath } from '../wiki/images.js';
 import { GROUPS, TEMPLATES } from '../config/wiki.js';
 import { builtinOrder } from '../wiki/custom.js';
 import { PICKABLE_ICONS } from '../config/icons.js';
+import { getTasks, TYPES, PRIORITIES, STATUSES } from '../tasks/model.js';
 
-const COLLECTION_NAMES = { wiki: 'Wiki page', tasks: 'Task', bugs: 'Bug', ideas: 'Idea', groups: 'Wiki group', templates: 'Wiki template' };
+const COLLECTION_NAMES = { wiki: 'Wiki page', tasks: 'Task', 'task-folders': 'Task folder', ideas: 'Idea', groups: 'Wiki group', templates: 'Wiki template' };
+// Collections whose items own pictures (images/<id>-…), shown as one entry with them.
+const OWNS_PICTURES = new Set(['wiki', 'tasks']);
 const STATUS_TEXT = { new: 'New', changed: 'Changed', deleted: 'Deleted' };
 
 /* ---------- Grouping what's pending ---------- */
@@ -29,7 +32,7 @@ async function loadEntries() {
   for (const item of pending.filter(p => p.kind === 'record')) {
     const e = { key: item.repoPath, main: item, files: [], status: status(item) };
     entries.push(e);
-    if (item.row.collection === 'wiki') pages.push(e);
+    if (OWNS_PICTURES.has(item.row.collection)) pages.push(e);
   }
   for (const item of pending.filter(p => p.kind === 'file')) {
     const owner = pages.find(e => isFileOfPage(item.row.path, e.main.row.id) || filesOfPage(e.main.row.data).has(item.row.path));
@@ -41,7 +44,9 @@ async function loadEntries() {
 }
 
 const kindText = e => {
-  const what = e.main.kind === 'file' ? 'Picture' : (COLLECTION_NAMES[e.main.row.collection] || humanizeKey(e.main.row.collection));
+  const what = e.main.kind === 'file' ? 'Picture'
+    : e.main.row.collection === 'tasks' && e.main.row.data?.type === 'bug' ? 'Bug'
+    : (COLLECTION_NAMES[e.main.row.collection] || humanizeKey(e.main.row.collection));
   return e.files.length ? `${what} + ${plural(e.files.length, 'picture')}` : what;
 };
 
@@ -61,7 +66,7 @@ const statusText = e => (isReset(e) ? 'Reset to built-in' : STATUS_TEXT[shownSta
 function editAddress(e) {
   if (e.main.kind !== 'record' || e.status === 'deleted') return null;
   const id = encodeURIComponent(e.main.row.id);
-  return { wiki: `#/wiki/e/${id}`, groups: `#/wiki/c/g/${id}`, templates: `#/wiki/c/t/${id}` }[e.main.row.collection] || null;
+  return { wiki: `#/wiki/e/${id}`, groups: `#/wiki/c/g/${id}`, templates: `#/wiki/c/t/${id}`, tasks: `#/tasks/t/${id}` }[e.main.row.collection] || null;
 }
 
 /* ---------- The screen ---------- */
@@ -174,7 +179,7 @@ export async function reviewChanges(gh) {
       // If it's open in an editor, leave the editor first so it doesn't save it again.
       const open = editAddress({ ...e, status: 'changed' });
       if (open && (location.hash === open || location.hash.startsWith(`${open}/`))) {
-        location.hash = e.main.row.collection === 'wiki' ? `#/wiki/p/${encodeURIComponent(e.main.row.id)}` : '#/wiki/c';
+        location.hash = { wiki: `#/wiki/p/${encodeURIComponent(e.main.row.id)}`, tasks: '#/tasks' }[e.main.row.collection] || '#/wiki/c';
         await new Promise(r => setTimeout(r, 400));
       }
       await discard(e, gh, base);
@@ -233,6 +238,8 @@ async function describe(e, gh, base) {
       const lines = kind === 'wiki' ? await wikiDiff(before, after)
         : kind === 'groups' ? await groupDiff(e.main.row.id, e.status === 'new' ? null : before, after)
         : kind === 'templates' ? await templateDiff(e.main.row.id, e.status === 'new' ? null : before, after)
+        : kind === 'tasks' ? await taskDiff(e.status === 'new' ? null : before, after)
+        : kind === 'task-folders' ? await folderDiff(e.status === 'new' ? null : before, after)
         : genericDiff(before, after);
       out.push(lines.length
         ? h('dl', { class: 'rv-diff' }, lines)
@@ -426,6 +433,47 @@ async function templateDiff(id, a, b) {
   const keptB = B.fields.filter(f => before.has(f.key)).map(f => f.key).join();
   if (keptA !== keptB) changes.push(['~', 'Order changed']);
   if (changes.length) out.push(listLines('Fields', changes));
+  return out;
+}
+
+/* Tasks and their folders */
+
+async function taskDiff(a, b) {
+  const [wiki, model] = await Promise.all([getWiki(), getTasks()]);
+  const txt = v => plainText(String(v), wiki);
+  const where = id => (id ? (model.folder(id) ? model.path(id).map(f => f.name).join(' › ') : '(a deleted folder)') : 'No folder');
+  const label = (map, v, dflt) => map[v] || map[dflt];
+  const showLinks = ls => (Array.isArray(ls) ? ls.map(l => (l.collection === 'wiki' ? nameFor(wiki, l.id) : `${l.collection}/${l.id}`)).join(', ') : '');
+  const out = [];
+  if (!a) {
+    // New: just what it is.
+    out.push(line('Title', null, b.title || '(no title)'));
+    out.push(line('Kind', null, label(TYPES, b.type, 'task')));
+    out.push(line('Priority', null, label(PRIORITIES, b.priority, 'normal')));
+    out.push(line('Status', null, label(STATUSES, b.status, 'todo')));
+    out.push(line('Folder', null, where(b.folder)));
+    if (has(b.links)) out.push(line('Links', null, showLinks(b.links)));
+    if (has(b.body)) out.push(bodyDiff([], b.body, txt));
+    return out;
+  }
+  if (!same(a.title, b.title)) out.push(line('Title', a.title, b.title));
+  if ((a.type || 'task') !== (b.type || 'task')) out.push(line('Kind', label(TYPES, a.type, 'task'), label(TYPES, b.type, 'task')));
+  if ((a.priority || 'normal') !== (b.priority || 'normal')) out.push(line('Priority', label(PRIORITIES, a.priority, 'normal'), label(PRIORITIES, b.priority, 'normal')));
+  if ((a.status || 'todo') !== (b.status || 'todo')) out.push(line('Status', label(STATUSES, a.status, 'todo'), label(STATUSES, b.status, 'todo')));
+  if ((a.folder || null) !== (b.folder || null)) out.push(line('Folder', where(a.folder), where(b.folder)));
+  if (!same(a.links, b.links)) out.push(line('Links', showLinks(a.links), showLinks(b.links)));
+  if (!same(a.body, b.body)) out.push(bodyDiff(a.body, b.body, txt));
+  return out;
+}
+
+async function folderDiff(a, b) {
+  const model = await getTasks();
+  const where = id => (id ? model.folder(id)?.name || '(a deleted folder)' : 'Top level');
+  if (!a) return [line('New folder', null, b.name), line('Inside', null, where(b.parent))];
+  const out = [];
+  if (!same(a.name, b.name)) out.push(line('Name', a.name, b.name));
+  if ((a.parent || null) !== (b.parent || null)) out.push(line('Inside', where(a.parent), where(b.parent)));
+  if (a.order !== b.order && (a.parent || null) === (b.parent || null)) out.push(line('Place in the list', null, 'moved'));
   return out;
 }
 

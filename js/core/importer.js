@@ -25,6 +25,7 @@ export const COLLECTIONS = {
   groups: 'Wiki group',
   templates: 'Wiki template',
   tasks: 'Task',
+  'task-folders': 'Task folder',
   ideas: 'Idea',
   sections: 'Idea section',
 };

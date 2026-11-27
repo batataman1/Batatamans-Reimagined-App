@@ -22,6 +22,9 @@ import { editorView, newPageDialog } from './editor.js';
 import { customizeView, groupEditorView, templateEditorView } from './customize.js';
 import { isPicturePath } from './images.js';
 import { pageMenu } from './actions.js';
+import { getTasks, byPriority } from '../tasks/model.js';
+import { linkedTaskItem } from '../tasks/views.js';
+import { newTaskDialog } from '../tasks/actions.js';
 
 const APP_TITLE = "Batataman's Reimagined";
 
@@ -291,8 +294,26 @@ function pageView(el, wiki, ui, id) {
       section('Linked from', linkedFrom.length
         ? h('div', { class: 'link-chips' }, linkedFrom.map(p => pageLink(wiki, p.id)))
         : h('p', { class: 'muted small', text: 'No other page links here yet.' })),
+      tasksBox(page),
       h('p', { class: 'wiki-updated muted small', text: `Last changed ${timeAgo(page.updatedAt)}.` }),
     )));
+}
+
+/** The open tasks and bugs that link this page, and a button to add one. */
+function tasksBox(page) {
+  const name = pageName(page);
+  const add = h('button', { type: 'button', class: 'btn btn-small', onclick: () => newTaskDialog({ pageId: page.id, pageName: name }) },
+    icon('plus', { size: 14 }), 'New task for this page');
+  const body = h('div', { class: 'wiki-tasks-body' });
+  getTasks().then(model => {
+    const linked = model.linkedTo('wiki', page.id);
+    const open = linked.filter(t => t.data.status !== 'done').sort(byPriority);
+    const done = linked.length - open.length;
+    clear(body,
+      open.length ? h('ul', { class: 'tk-list compact' }, open.map(linkedTaskItem)) : h('p', { class: 'muted small', text: 'No open tasks for this page.' }),
+      done ? h('p', { class: 'muted small', text: `${plural(done, 'done task')} not shown.` }) : null);
+  });
+  return h('section', { class: 'wiki-section wiki-tasks' }, h('h2', { text: 'Tasks & bugs' }), body, add);
 }
 
 function infobox(page, wiki, tpl, place) {

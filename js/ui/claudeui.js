@@ -140,7 +140,7 @@ function fieldSummary(data) {
 export async function copyTasksForClaude() {
   const { text, count } = await tasksAsText();
   if (!count) {
-    toast('There are no tasks yet. Tasks & Bugs arrives in part 2c.');
+    toast('There are no tasks yet.');
     return;
   }
   try {

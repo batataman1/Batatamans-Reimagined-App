@@ -22,10 +22,12 @@ node dev/test/e2e.mjs      # two simulated devices: connect, import, push, pull,
 node dev/test/wiki.mjs     # Wiki tab: starter import, groups, pages, links, back button, search, phone
 node dev/test/wikiedit.mjs # Wiki editing: new page, editor, / menu, links, pictures, undo, move, delete
 node dev/test/customize.mjs # Customize: groups, sub-groups, templates, hiding, reset, review, phone drag
+node dev/test/tasks.mjs    # Tasks & Bugs: quick add, folders, filters, list/board, task page, wiki box, phone
 node dev/test/sw.mjs       # offline loading and the "new version" prompt
 ```
 
 `dev/starter-wiki.json` is the starter wiki import from part 2b (also used by wiki.mjs).
+`dev/starter-tasks.json` is the starter tasks import from part 2c (also used by tasks.mjs).
 
 Needs Python with Pillow, Node 18+, Playwright and Chrome
 (`CHROME`, `PLAYWRIGHT_DIR`, `BASE` and `SHOTS` environment variables override the defaults).

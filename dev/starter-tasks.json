@@ -1,0 +1,336 @@
+{
+  "format": "batataman-import",
+  "version": 1,
+  "summary": "Starter tasks: the unfinished bits from the wiki pages (8 tasks in Mobs, Blocks and World)",
+  "changes": [
+    {
+      "action": "upsert",
+      "collection": "task-folders",
+      "id": "f-mobs",
+      "data": {
+        "name": "Mobs",
+        "parent": null,
+        "order": 10
+      }
+    },
+    {
+      "action": "upsert",
+      "collection": "task-folders",
+      "id": "f-blocks",
+      "data": {
+        "name": "Blocks",
+        "parent": null,
+        "order": 20
+      }
+    },
+    {
+      "action": "upsert",
+      "collection": "task-folders",
+      "id": "f-world",
+      "data": {
+        "name": "World",
+        "parent": null,
+        "order": 30
+      }
+    },
+    {
+      "action": "upsert",
+      "collection": "tasks",
+      "id": "t-natural-spawns",
+      "data": {
+        "title": "Natural spawns for the mobs",
+        "type": "task",
+        "priority": "high",
+        "status": "todo",
+        "folder": "f-mobs",
+        "links": [
+          {
+            "collection": "wiki",
+            "id": "ostrich"
+          },
+          {
+            "collection": "wiki",
+            "id": "termite"
+          },
+          {
+            "collection": "wiki",
+            "id": "monkey"
+          }
+        ],
+        "body": [
+          {
+            "type": "p",
+            "text": "Every mob only comes from a spawn egg right now."
+          },
+          {
+            "type": "todo",
+            "text": "[[ostrich]]",
+            "checked": false
+          },
+          {
+            "type": "todo",
+            "text": "[[termite]]",
+            "checked": false
+          },
+          {
+            "type": "todo",
+            "text": "[[monkey]]",
+            "checked": false
+          }
+        ],
+        "created": "2026-11-27T12:00:01.000Z"
+      }
+    },
+    {
+      "action": "upsert",
+      "collection": "tasks",
+      "id": "t-mob-loot-tables",
+      "data": {
+        "title": "Loot tables for the mobs",
+        "type": "task",
+        "priority": "normal",
+        "status": "todo",
+        "folder": "f-mobs",
+        "links": [
+          {
+            "collection": "wiki",
+            "id": "ostrich"
+          },
+          {
+            "collection": "wiki",
+            "id": "termite"
+          },
+          {
+            "collection": "wiki",
+            "id": "monkey"
+          }
+        ],
+        "body": [
+          {
+            "type": "p",
+            "text": "No mob drops anything yet."
+          },
+          {
+            "type": "todo",
+            "text": "[[ostrich]]",
+            "checked": false
+          },
+          {
+            "type": "todo",
+            "text": "[[termite]]",
+            "checked": false
+          },
+          {
+            "type": "todo",
+            "text": "[[monkey]]",
+            "checked": false
+          }
+        ],
+        "created": "2026-11-27T12:00:02.000Z"
+      }
+    },
+    {
+      "action": "upsert",
+      "collection": "tasks",
+      "id": "t-ostrich-egg-hatch-time",
+      "data": {
+        "title": "Ostrich eggs take about 11 hours to hatch",
+        "type": "bug",
+        "priority": "normal",
+        "status": "todo",
+        "folder": "f-mobs",
+        "links": [
+          {
+            "collection": "wiki",
+            "id": "ostrich-egg"
+          }
+        ],
+        "body": [
+          {
+            "type": "p",
+            "text": "Each random tick has a 1 in 200 chance to move the egg one step, and it needs 3 steps. At the default random tick speed that's about 11 hours."
+          }
+        ],
+        "created": "2026-11-27T12:00:03.000Z"
+      }
+    },
+    {
+      "action": "upsert",
+      "collection": "tasks",
+      "id": "t-block-loot-tables",
+      "data": {
+        "title": "Loot tables for the termite blocks and the ostrich egg",
+        "type": "task",
+        "priority": "normal",
+        "status": "todo",
+        "folder": "f-blocks",
+        "links": [
+          {
+            "collection": "wiki",
+            "id": "termite-mound"
+          },
+          {
+            "collection": "wiki",
+            "id": "termite-nest"
+          },
+          {
+            "collection": "wiki",
+            "id": "ostrich-egg"
+          }
+        ],
+        "body": [
+          {
+            "type": "p",
+            "text": "These drop nothing when broken."
+          },
+          {
+            "type": "todo",
+            "text": "[[termite-mound]]",
+            "checked": false
+          },
+          {
+            "type": "todo",
+            "text": "[[termite-nest]]",
+            "checked": false
+          },
+          {
+            "type": "todo",
+            "text": "[[ostrich-egg]]",
+            "checked": false
+          }
+        ],
+        "created": "2026-11-27T12:00:04.000Z"
+      }
+    },
+    {
+      "action": "upsert",
+      "collection": "tasks",
+      "id": "t-hollow-log-recipe",
+      "data": {
+        "title": "Recipe for hollow logs",
+        "type": "task",
+        "priority": "normal",
+        "status": "todo",
+        "folder": "f-blocks",
+        "links": [
+          {
+            "collection": "wiki",
+            "id": "hollow-logs"
+          }
+        ],
+        "body": [
+          {
+            "type": "p",
+            "text": "[[hollow-logs]] are creative only for now. Planned: termites make hollow logs."
+          }
+        ],
+        "created": "2026-11-27T12:00:05.000Z"
+      }
+    },
+    {
+      "action": "upsert",
+      "collection": "tasks",
+      "id": "t-wood-set-signs-boats",
+      "data": {
+        "title": "Signs, hanging signs and boats for both wood sets",
+        "type": "task",
+        "priority": "normal",
+        "status": "todo",
+        "folder": "f-blocks",
+        "links": [
+          {
+            "collection": "wiki",
+            "id": "baobab-wood-set"
+          },
+          {
+            "collection": "wiki",
+            "id": "palm-wood-set"
+          }
+        ],
+        "body": [
+          {
+            "type": "todo",
+            "text": "Baobab signs",
+            "checked": false
+          },
+          {
+            "type": "todo",
+            "text": "Baobab hanging signs",
+            "checked": false
+          },
+          {
+            "type": "todo",
+            "text": "Baobab boat",
+            "checked": false
+          },
+          {
+            "type": "todo",
+            "text": "Palm signs",
+            "checked": false
+          },
+          {
+            "type": "todo",
+            "text": "Palm hanging signs",
+            "checked": false
+          },
+          {
+            "type": "todo",
+            "text": "Palm boat",
+            "checked": false
+          }
+        ],
+        "created": "2026-11-27T12:00:06.000Z"
+      }
+    },
+    {
+      "action": "upsert",
+      "collection": "tasks",
+      "id": "t-sideways-rope",
+      "data": {
+        "title": "Sideways rope",
+        "type": "task",
+        "priority": "low",
+        "status": "todo",
+        "folder": "f-blocks",
+        "links": [
+          {
+            "collection": "wiki",
+            "id": "rope"
+          }
+        ],
+        "body": [
+          {
+            "type": "p",
+            "text": "Placing [[rope]] sideways is still a TODO in the code."
+          }
+        ],
+        "created": "2026-11-27T12:00:07.000Z"
+      }
+    },
+    {
+      "action": "upsert",
+      "collection": "tasks",
+      "id": "t-oasis-piece-todo",
+      "data": {
+        "title": "Fix the TODO in OasisPiece",
+        "type": "bug",
+        "priority": "normal",
+        "status": "todo",
+        "folder": "f-world",
+        "links": [
+          {
+            "collection": "wiki",
+            "id": "desert-oasis"
+          }
+        ],
+        "body": [
+          {
+            "type": "p",
+            "text": "OasisPiece (the [[desert-oasis]] structure) has \"TODO: Fix this!!!\" in the code."
+          }
+        ],
+        "created": "2026-11-27T12:00:08.000Z"
+      }
+    }
+  ]
+}

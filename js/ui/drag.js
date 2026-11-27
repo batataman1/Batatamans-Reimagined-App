@@ -6,7 +6,8 @@
 import { h } from '../core/util.js';
 
 /**
- * container: the element holding the rows (its direct children that match `row`).
+ * container: the element holding the rows (its direct children that match `row`). Lists can be
+ * nested (a row may hold another sortable list); each list only moves its own rows.
  * onMove(from, to): called after a drop; `to` is the index the row ends up at.
  */
 export function sortable(container, { row = '.sort-row', handle = '.sort-handle', onMove }) {
@@ -22,8 +23,9 @@ export function sortable(container, { row = '.sort-row', handle = '.sort-handle'
     const hd = e.target.closest(handle);
     if (!hd || !container.contains(hd) || e.button !== 0) return;
     const rows = () => [...container.children].filter(c => c.matches(row));
-    const el = rows().find(r => r.contains(hd));
-    if (!el) return;
+    // Only rows of this list (a list inside a row, like sub-folders, handles its own rows).
+    const el = hd.closest(row);
+    if (!el || el.parentElement !== container) return;
 
     const startX = e.clientX, startY = e.clientY;
     let dragging = false, target = -1, lastY = startY, raf = 0;

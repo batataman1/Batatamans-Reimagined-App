@@ -4,13 +4,10 @@
 
 import { placeholderTab } from './placeholder.js';
 import { wikiTab } from './wiki.js';
+import { tasksTab } from './tasks.js';
 
 const wiki = wikiTab;
-
-const tasks = placeholderTab({
-  id: 'tasks', label: 'Tasks & Bugs', icon: 'tasks', collections: ['tasks'], comingIn: '2c',
-  describe: r => [r.data.type, r.data.priority].filter(Boolean).join(', '),
-});
+const tasks = tasksTab;
 
 const ideas = placeholderTab({
   id: 'ideas', label: 'Ideas', icon: 'idea', collections: ['ideas', 'sections'], comingIn: '2c to 2e',
