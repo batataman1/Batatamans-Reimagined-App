@@ -227,6 +227,11 @@ const optSeg = (page, label, value) => page.locator(`.dr-opts .seg[aria-label="$
 async function drMenu(page, pick) {
   await page.locator('.dr-top-tools button[aria-label="More"]').click();
   await popup(page).waitFor();
+  // Swap colours and grayscale live in the Effects menu (part 2e).
+  if (!(await popup(page).locator('.popup-item', { hasText: pick }).count())) {
+    await popup(page).locator('.popup-item', { hasText: 'Effects' }).first().click();
+    await popup(page).locator('.popup-item', { hasText: pick }).first().waitFor();
+  }
   await popup(page).locator('.popup-item', { hasText: pick }).first().click();
 }
 async function waitDrawingSaved(page) {

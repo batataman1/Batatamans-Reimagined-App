@@ -97,7 +97,7 @@ const choose = id => { try { localStorage.setItem(PREF, id); } catch { /* storag
  * own palettes "+" to add the colour you're using and "Remove colours".
  * getColor(): the colour in use; onPick(hex); drawingColors(): the drawing's colours.
  */
-export function palettePanel({ getColor, onPick, drawingColors }) {
+export function palettePanel({ getColor, onPick, drawingColors, onChoose = null }) {
   const el = h('div', { class: 'pal' });
   let palettes = [];
   let removing = false;
@@ -114,7 +114,7 @@ export function palettePanel({ getColor, onPick, drawingColors }) {
     const select = h('select', { class: 'input pal-select', 'aria-label': 'Palette' },
       palettes.map(x => h('option', { value: x.id, text: x.builtin ? x.name : `${x.name}` })));
     select.value = p.id;
-    select.addEventListener('change', () => { choose(select.value); removing = false; draw(); });
+    select.addEventListener('change', () => { choose(select.value); removing = false; draw(); onChoose?.(); });
     const more = h('button', { type: 'button', class: 'icon-btn pal-more', 'aria-label': 'Palette options', title: 'New palette, rename, delete…', onclick: () => menu(more) }, '⋯');
     const swatches = p.colors.map(c => h('button', {
       type: 'button', class: `pal-sw${removing ? ' removing' : ''}`, style: { '--c': c }, title: removing ? `Remove ${c}` : c,

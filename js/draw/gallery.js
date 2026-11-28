@@ -268,6 +268,16 @@ export async function copyWithPicture(d, ui, source, fn, label) {
   } catch (err) { errorDialog(err, "The copy couldn't be made"); }
 }
 
+/** A copy whose picture is the given pixels (ImageData at the fine size, from an effect's preview). */
+export async function copyWithImage(d, ui, image, label) {
+  try {
+    const c = Object.assign(document.createElement('canvas'), { width: image.width, height: image.height });
+    c.getContext('2d').putImageData(image, 0, 0);
+    const copy = await createDrawing({ ...d.data, name: `${d.data.name} (${label})`, file: await canvasBlob(c) });
+    madeCopy(copy.id, ui);
+  } catch (err) { errorDialog(err, "The copy couldn't be made"); }
+}
+
 export function confirmDeleteDrawing(d) {
   const ref = d.data.kind === 'reference';
   return confirmDialog({

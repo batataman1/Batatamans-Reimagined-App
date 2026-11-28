@@ -7,6 +7,10 @@
 // screen). Drag the border between them to change the sizes; its handle swaps the sides, turns
 // the split, or closes it. Tools, options and colours are shared: pick a colour in one half and
 // draw with it in the other.
+//
+// Part 2e: Select (rectangle, free shape, colour area) with Move, Copy, Cut, Paste, Flip and
+// Turn; Polygon, Gradient, Effect brush, Text and Stamp tools; a second colour; the Effects menu.
+// Each half of a split screen has its own selection; copy in one half and paste in the other.
 
 import { h, clear } from '../core/util.js';
 import { icon } from '../ui/icons.js';
@@ -16,8 +20,13 @@ import { getIdeas } from '../ideas/model.js';
 import { swapData, grayscaleData } from './engine.js';
 import { createDoc } from './doc.js';
 import { colorPicker, palettePanel, pickColorDialog, swapColorsDialog, currentPaletteColors } from './colors.js';
-import { getDrawings, normHex, removeDrawing, importReference } from './model.js';
-import { detailsDialog, exportDialog, duplicateDrawing, confirmDeleteDrawing, copyWithPicture, newDrawingDialog, thumbCanvas } from './gallery.js';
+import { getDrawings, normHex, hexToRgb, removeDrawing, importReference } from './model.js';
+import { detailsDialog, exportDialog, duplicateDrawing, confirmDeleteDrawing, copyWithPicture, copyWithImage, newDrawingDialog, thumbCanvas } from './gallery.js';
+import { pieceFromCanvas, scalePiece, flipPiece, turnPiece, tintPiece, pieceCells, cellsToPiece } from './select.js';
+import { BRUSH_EFFECTS } from './effects.js';
+import { getStamps, stampsDialog, saveStampDialog, stampThumb } from './stamps.js';
+import { textDialog, effectDialog, EFFECTS } from './tooldialogs.js';
+import { drawingToWikiDialog } from './wikipic.js';
 import { store } from '../core/store.js';
 
 const APP_TITLE = "Batataman's Reimagined";
@@ -30,24 +39,52 @@ export const TOOLS = [
   { id: 'eraser', label: 'Eraser', key: 'E', code: 'KeyE' },
   { id: 'fill', label: 'Fill', key: 'G', code: 'KeyG' },
   { id: 'picker', label: 'Pick a colour', key: 'I', code: 'KeyI' },
+  { id: 'select', label: 'Select', key: 'M', code: 'KeyM' },
   { id: 'line', label: 'Line', key: 'L', code: 'KeyL' },
   { id: 'rect', label: 'Rectangle', key: 'R', code: 'KeyR' },
   { id: 'ellipse', label: 'Ellipse', key: 'O', code: 'KeyO' },
+  { id: 'polygon', label: 'Polygon', key: 'Y', code: 'KeyY' },
+  { id: 'gradient', label: 'Gradient', key: 'D', code: 'KeyD' },
+  { id: 'effect', label: 'Effect brush', key: 'U', code: 'KeyU' },
+  { id: 'text', label: 'Text', key: 'T', code: 'KeyT' },
+  { id: 'stamp', label: 'Stamp', key: 'S', code: 'KeyS' },
 ];
-const toolIcon = (id, mode) => (id === 'pen' ? (mode === 'pixel' ? 'pencil' : 'brush') : id === 'picker' ? 'dropper' : id === 'fill' ? 'bucket' : id);
+// On a phone some tools share one button (the options row switches between them).
+const GROUPS = {
+  shapes: { label: 'Shapes', tools: ['line', 'rect', 'ellipse', 'polygon'] },
+  paint: { label: 'Gradient and effects', tools: ['gradient', 'effect'] },
+  add: { label: 'Text and stamps', tools: ['text', 'stamp'] },
+};
+const groupOf = id => Object.keys(GROUPS).find(g => GROUPS[g].tools.includes(id)) || null;
+const PHONE_BAR = ['pen', 'eraser', 'fill', 'picker', 'select', 'shapes', 'paint', 'add'];
+const SELECT_ICON = { rect: 'select', lasso: 'lasso', wand: 'wand' };
+const toolIcon = (id, mode, prefs) => (id === 'pen' ? (mode === 'pixel' ? 'pencil' : 'brush') : id === 'picker' ? 'dropper' : id === 'fill' ? 'bucket'
+  : id === 'select' ? SELECT_ICON[prefs.selShape] || 'select' : id === 'effect' ? 'fxbrush' : id);
 const MIRRORS = { none: 'Off', x: 'Left and right', y: 'Top and bottom', xy: 'All four corners' };
 const isPhone = () => matchMedia('(max-width: 759px)').matches;
+const label = id => TOOLS.find(t => t.id === id)?.label || id;
 
 function loadPrefs() {
   const p = {
     tool: 'pen', pixelSize: 1, freeSize: 11, opacity: 1, soft: false, filled: false, fillAll: false,
-    pixelPerfect: true, eraseTap: false, eraseAll: false, color: '#000000', recent: [],
+    pixelPerfect: true, eraseTap: false, eraseAll: false, color: '#000000', color2: '#ffffff', recent: [],
+    groupLast: { shapes: 'line', paint: 'gradient', add: 'text' },
+    selShape: 'rect', selOp: 'new', wandAll: false, wandTol: 32,
+    gradShape: 'straight', gradTo: 'color2', gradArea: 'area', gradSteps: 4, gradDither: 'ordered',
+    fx: 'lighten', fxStrength: 0.3, fxAlongPalette: false, fxDither: 'checker',
+    font: 'pixel', pixelDot: 1, fontSize: 8, fontBold: false, textAlign: 'left', lastText: '',
+    stamp: 'b-heart', stampSize: 1, stampFlipX: false, stampFlipY: false, stampTurn: 0, stampTint: false,
   };
   try { Object.assign(p, JSON.parse(localStorage.getItem(PREFS) || '{}')); } catch { /* ignore */ }
   if (!TOOLS.some(t => t.id === p.tool)) p.tool = 'pen';
   if (!normHex(p.color)) p.color = '#000000';
+  if (!normHex(p.color2)) p.color2 = '#ffffff';
   if (!Array.isArray(p.recent)) p.recent = [];
   if (!(p.freeSize > 0)) p.freeSize = 11;
+  if (!p.groupLast || typeof p.groupLast !== 'object') p.groupLast = { shapes: 'line', paint: 'gradient', add: 'text' };
+  if (!SELECT_ICON[p.selShape]) p.selShape = 'rect';
+  if (!['new', 'add', 'subtract'].includes(p.selOp)) p.selOp = 'new';
+  if (!BRUSH_EFFECTS[p.fx]) p.fx = 'lighten';
   return p;
 }
 
@@ -80,6 +117,8 @@ function createWorkspace() {
   const saveTabs = () => { try { localStorage.setItem(TABS, JSON.stringify(tabs)); } catch { /* storage blocked */ } };
   const docs = new Map();
   let ctx = null, mounted = false, prevActive = null, prevTool = 'pen', spaceDown = false;
+  /** What Copy and Cut keep, for Paste in any open drawing: { piece, k, pixel, at, from }. */
+  let clip = null;
 
   /* ---------- What's open ---------- */
 
@@ -90,6 +129,8 @@ function createWorkspace() {
   /** The drawing the colour tools work on: the active one, or the drawing next to a reference. */
   const drawingDoc = () => shownIds().map(id => docs.get(id)).find(d => d && !d.isRef && d.id === tabs.active)
     || shownIds().map(id => docs.get(id)).find(d => d && !d.isRef) || null;
+  /** The active drawing (not a reference), or null. */
+  const workDoc = () => { const d = activeDoc(); return d && !d.isRef ? d : null; };
   function getDoc(id) {
     let doc = docs.get(id);
     if (!doc) {
@@ -281,13 +322,14 @@ function createWorkspace() {
   const topEl = h('div', { class: 'dr-top' });
   const toolsEl = h('div', { class: 'dr-tools', role: 'toolbar', 'aria-label': 'Tools' });
   const optsEl = h('div', { class: 'dr-opts' });
+  const selEl = h('div', { class: 'dr-selbar', role: 'toolbar', 'aria-label': 'Selection', hidden: true });
   const panes = h('div', { class: 'dr-panes' });
   const side = h('aside', { class: 'dr-side' });
   const colorsRow = h('div', { class: 'dr-colors' });
   const dropZones = [h('div', { class: 'dr-drop-zone' }), h('div', { class: 'dr-drop-zone' })];
   const dropEl = h('div', { class: 'dr-drop', hidden: true }, dropZones);
   const fileInput = h('input', { type: 'file', accept: 'image/png,image/jpeg,image/webp,image/gif', hidden: true, class: 'dr-file' });
-  const root = h('div', { class: 'dr' }, tabbar, topEl, toolsEl, optsEl, panes, side, colorsRow, dropEl, fileInput);
+  const root = h('div', { class: 'dr' }, tabbar, topEl, toolsEl, optsEl, selEl, panes, side, colorsRow, dropEl, fileInput);
 
   let shownKey = '';
   function layout() {
@@ -315,6 +357,7 @@ function createWorkspace() {
     drawTop();
     drawTools();
     drawOptions();
+    drawSelBar();
   }
 
   /* ---------- Tabs ---------- */
@@ -512,15 +555,41 @@ function createWorkspace() {
     fileInput.click();
   }
 
+  /* ---------- Stamps ---------- */
+
+  let stamps = [];
+  async function loadStamps() { stamps = await getStamps(); if (mounted) { drawOptions(); } }
+  const currentStamp = () => stamps.find(s => s.id === prefs.stamp && s.canvas) || stamps.find(s => s.canvas) || null;
+  const stampPieces = new Map();
+  /** The chosen stamp, ready for this drawing: its size in squares kept, flipped, turned, coloured. */
+  function stampPiece(doc) {
+    const s = currentStamp();
+    if (!s) return null;
+    const k = doc.engine.scale;
+    const key = [s.id, s.canvas.width, k, prefs.stampSize, prefs.stampFlipX, prefs.stampFlipY, prefs.stampTurn, prefs.stampTint ? prefs.color : ''].join('|');
+    let p = stampPieces.get(key);
+    if (!p) {
+      p = scalePiece(pieceFromCanvas(s.canvas, { maskAll: false }), (k / s.scale) * prefs.stampSize, s.kind !== 'pixel');
+      if (prefs.stampFlipX) p = flipPiece(p, true);
+      if (prefs.stampFlipY) p = flipPiece(p, false);
+      if (prefs.stampTurn) p = turnPiece(p, prefs.stampTurn / 90);
+      if (prefs.stampTint) { const c = hexToRgb(prefs.color); p = tintPiece(p, [c.r, c.g, c.b]); }
+      if (stampPieces.size > 20) stampPieces.clear();
+      stampPieces.set(key, p);
+    }
+    return p;
+  }
+
   /* ---------- What documents tell the workspace ---------- */
 
   const api = {
     prefs,
     get spaceDown() { return spaceDown; },
     statusChanged(doc) { if (doc.id === tabs.active) statusEl.textContent = doc.status; },
-    changed(doc) { if (doc.id === tabs.active) drawUndo(); thumbSoon(doc.id); },
+    changed(doc) { if (doc.id === tabs.active) { drawUndo(); if (prefs.tool === 'polygon') drawOptions(); } thumbSoon(doc.id); },
     viewChanged(doc) { if (doc.id === tabs.active) zoomText.textContent = doc.zoomText; },
     activate(doc) { if (doc.id !== tabs.active) activate(doc.id); },
+    selectionChanged(doc) { if (doc.id === tabs.active) { drawSelBar(); drawUndo(); } },
     picked(hex) {
       if (!hex) { toast('Nothing to pick up there (it’s see-through).'); return; }
       setColor(hex);
@@ -532,33 +601,64 @@ function createWorkspace() {
       drawRecent();
     },
     strokeOptions(doc) {
+      const wrap = !!doc.st.tiles;
       if (prefs.tool === 'eraser' && prefs.eraseTap) {
         // The tap eraser: a fill with nothing (see-through).
-        return { tool: 'fill', mode: doc.st.mode, color: '#000000', opacity: 0, fillAll: prefs.eraseAll, symmetry: doc.st.mirror };
+        return { tool: 'fill', mode: doc.st.mode, color: '#000000', opacity: 0, fillAll: prefs.eraseAll, symmetry: doc.st.mirror, wrap };
       }
+      const pal = prefs.tool === 'effect' && prefs.fxAlongPalette && doc.st.mode === 'pixel' && (prefs.fx === 'lighten' || prefs.fx === 'darken')
+        ? rowPalette.map(c => { const v = hexToRgb(c); return [v.r, v.g, v.b]; }) : null;
       return {
-        tool: prefs.tool, mode: doc.st.mode, color: prefs.color, opacity: prefs.opacity,
+        tool: prefs.tool, mode: doc.st.mode, color: prefs.color, color2: prefs.color2, opacity: prefs.opacity,
         size: doc.st.mode === 'pixel' ? prefs.pixelSize : prefs.freeSize,
         soft: prefs.soft, filled: prefs.filled, fillAll: prefs.fillAll,
-        pixelPerfect: prefs.tool === 'pen' && prefs.pixelPerfect, symmetry: doc.st.mirror,
+        pixelPerfect: prefs.tool === 'pen' && prefs.pixelPerfect, symmetry: doc.st.mirror, wrap,
+        gradShape: prefs.gradShape, gradTo: prefs.gradTo, gradArea: prefs.gradArea, gradSteps: prefs.gradSteps, gradDither: prefs.gradDither,
+        fx: prefs.fx, strength: prefs.fxStrength, fxPalette: pal && pal.length ? pal : null, fxDither: prefs.fxDither,
+        stampPiece: prefs.tool === 'stamp' ? stampPiece(doc) : null,
       };
     },
     brushOutline() {
       const t = prefs.tool;
-      return t === 'pen' || (t === 'eraser' && !prefs.eraseTap) || ['line', 'rect', 'ellipse'].includes(t)
+      if (t === 'stamp') {
+        const d = drawingDoc();
+        const p = d && stampPiece(d);
+        return p ? { stamp: { w: p.w, h: p.h } } : null;
+      }
+      return t === 'pen' || (t === 'eraser' && !prefs.eraseTap) || ['line', 'rect', 'ellipse', 'polygon', 'effect'].includes(t)
         ? { pixelSize: prefs.pixelSize, freeSize: prefs.freeSize } : null;
     },
+    /** The Text tool was tapped at p (fine pixels): ask for the text, then place it there. */
+    async textAt(doc, p) {
+      const r = await textDialog({ prefs, savePrefs, mode: doc.st.mode, k: doc.engine.scale });
+      if (!r) return;
+      const pixel = doc.st.mode === 'pixel';
+      let piece = pieceFromCanvas(r.canvas, { maskAll: false });
+      if (r.unit !== doc.engine.scale) piece = scalePiece(piece, doc.engine.scale / r.unit, !pixel && r.unit > 1);
+      // Its top-left corner goes on the square you tapped.
+      const k = doc.engine.scale;
+      doc.engine.pasteFloat(piece, pixel ? { x: Math.floor(p.x / k) * k, y: Math.floor(p.y / k) * k, pixel } : { x: Math.round(p.x), y: Math.round(p.y), pixel });
+      if (prefs.color) api.remember(prefs.color);
+      toast('Drag the text where you want it, then tap Done.');
+    },
     closeMenus: () => closePopup(),
+    /** Where the selection bar floats over the pictures (Fit leaves room for it). */
+    fitInset: () => (isPhone() ? { top: 0, bottom: 52 } : { top: 58, bottom: 0 }),
   };
 
   /* ---------- Tools and options ---------- */
 
   function setTool(id) {
     if (id === 'picker' && prefs.tool !== 'picker') prevTool = prefs.tool;
+    // A polygon you were drawing is finished when you take another tool.
+    for (const sid of shownIds()) { const d = docs.get(sid); if (d?.engine?.polygon && id !== 'polygon') { d.engine.polyClose(); d.drawOverlay(); } }
     prefs.tool = id;
+    const g = groupOf(id);
+    if (g) prefs.groupLast[g] = id;
     savePrefs();
     drawTools();
     drawOptions();
+    drawSelBar();
     for (const sid of shownIds()) { const d = docs.get(sid); if (d) { d.stage.dataset.tool = id; d.drawOverlay(); } }
   }
   function setMode(m) {
@@ -570,67 +670,291 @@ function createWorkspace() {
   }
   const penMode = () => { const d = activeDoc(); return d && !d.isRef ? d.st.mode : (drawingDoc()?.st.mode || 'pixel'); };
 
+  function toolButton(id, mode, { lbl = null, ic = null, pressed = prefs.tool === id, onclick = () => setTool(id), data = id } = {}) {
+    const name = lbl || (id === 'pen' ? (mode === 'pixel' ? 'Pixel pen' : 'Free pen') : label(id));
+    const key = TOOLS.find(t => t.id === id)?.key;
+    return h('button', {
+      type: 'button', class: 'dr-tool', 'aria-pressed': String(pressed), dataset: { tool: data },
+      'aria-label': name, title: key ? `${name} (${key})` : name, onclick,
+    }, icon(ic || toolIcon(id, mode, prefs), { size: 22 }));
+  }
   function drawTools() {
     const mode = penMode();
-    clear(toolsEl, TOOLS.map(tl => {
-      const label = tl.id === 'pen' ? (mode === 'pixel' ? 'Pixel pen' : 'Free pen') : tl.label;
-      return h('button', {
-        type: 'button', class: 'dr-tool', 'aria-pressed': String(prefs.tool === tl.id), dataset: { tool: tl.id },
-        'aria-label': label, title: `${label} (${tl.key})`, onclick: () => setTool(tl.id),
-      }, icon(toolIcon(tl.id, mode), { size: 22 }));
+    if (!isPhone()) { clear(toolsEl, TOOLS.map(tl => toolButton(tl.id, mode))); return; }
+    clear(toolsEl, PHONE_BAR.map(id => {
+      const g = GROUPS[id];
+      if (!g) return toolButton(id, mode);
+      const last = g.tools.includes(prefs.groupLast[id]) ? prefs.groupLast[id] : g.tools[0];
+      const on = g.tools.includes(prefs.tool);
+      const shown = on ? prefs.tool : last;
+      return toolButton(shown, mode, {
+        lbl: g.label, pressed: on, data: id, ic: toolIcon(shown, mode, prefs),
+        onclick: e => (on ? groupMenu(id, e.currentTarget) : setTool(last)),
+      });
     }));
+  }
+  function groupMenu(g, anchor) {
+    openPopup({
+      rect: anchor.getBoundingClientRect(), title: GROUPS[g].label,
+      items: GROUPS[g].tools.map(id => ({ label: label(id), icon: toolIcon(id, penMode(), prefs), hint: prefs.tool === id ? '✓' : '', onPick: () => setTool(id) })),
+    });
   }
 
   const seg = (name, options, value, onPick) => h('div', { class: 'seg dr-seg', role: 'group', 'aria-label': name },
-    options.map(([v, label, ic]) => h('button', {
+    options.map(([v, lbl, ic]) => h('button', {
       type: 'button', class: 'seg-btn', 'aria-pressed': String(value === v), dataset: { value: v },
+      title: lbl, 'aria-label': lbl,
       onclick: () => onPick(v),
-    }, ic ? icon(ic, { size: 14 }) : null, label)));
+    }, ic ? icon(ic, { size: 14 }) : null, ic && isPhone() ? null : lbl)));
   const freeMax = () => { const d = drawingDoc(); return Math.max(8, Math.round(Math.max(d?.engine.W || 1024, d?.engine.H || 1024) / 4)); };
   const sizeToSlider = s => Math.round((Math.log(Math.max(1, s)) / Math.log(freeMax())) * 100);
   const sliderToSize = v => Math.max(1, Math.round(Math.exp((v / 100) * Math.log(freeMax()))));
-  function slider(label, { min, max, value, show, onInput, name }) {
+  function slider(lbl, { min, max, value, show, onInput, name, step = 1 }) {
     const out = h('span', { class: 'dr-slider-value', text: show(value) });
-    const input = h('input', { type: 'range', min, max, step: 1, value, name, 'aria-label': label });
+    const input = h('input', { type: 'range', min, max, step, value, name, 'aria-label': lbl });
     input.addEventListener('input', () => { out.textContent = show(+input.value); onInput(+input.value); });
-    return h('label', { class: 'dr-slider' }, h('span', { class: 'dr-slider-label', text: label }), input, out);
+    return h('label', { class: 'dr-slider' }, h('span', { class: 'dr-slider-label', text: lbl }), input, out);
   }
+  const check = (lbl, name, value, onChange, title = '') => h('label', { class: 'dr-check', title },
+    h('input', { type: 'checkbox', name, checked: value, onchange: e => onChange(e.target.checked) }), lbl);
+  const hint = text => h('span', { class: 'muted small dr-hint', text });
   const redrawOverlays = () => { for (const id of shownIds()) docs.get(id)?.drawOverlay(); };
+  const set = (key, after = drawOptions) => v => { prefs[key] = v; savePrefs(); after?.(); redrawOverlays(); };
+
+  const sizeSlider = mode => (mode === 'pixel'
+    ? slider('Size', { name: 'size', min: 1, max: 16, value: prefs.pixelSize, show: v => `${v}`, onInput: v => { prefs.pixelSize = v; savePrefs(); } })
+    : slider('Size', { name: 'size', min: 0, max: 100, value: sizeToSlider(prefs.freeSize), show: v => `${sliderToSize(v)}`, onInput: v => { prefs.freeSize = sliderToSize(v); savePrefs(); } }));
+  const opacitySlider = () => slider('Opacity', { name: 'opacity', min: 5, max: 100, value: Math.round(prefs.opacity * 100), show: v => `${v}%`, onInput: v => { prefs.opacity = v / 100; savePrefs(); } });
 
   function drawOptions() {
     const tl = prefs.tool;
     const a = activeDoc();
     if (a?.isRef) {
-      clear(optsEl, h('span', { class: 'muted small dr-hint', text: 'Reference picture: tap it to pick a colour. Drag to move it, pinch or scroll to zoom.' }));
+      clear(optsEl, hint('Reference picture: tap it to pick a colour. Drag to move it, pinch or scroll to zoom.'));
       return;
     }
     const mode = penMode();
     const parts = [seg('Pen', [['pixel', 'Pixel', 'pencil'], ['free', 'Free', 'brush']], mode, setMode)];
+    const g = groupOf(tl);
+    if (g && isPhone()) parts.push(seg(GROUPS[g].label, GROUPS[g].tools.map(id => [id, label(id), toolIcon(id, mode, prefs)]), tl, setTool));
     const tapErase = tl === 'eraser' && prefs.eraseTap;
     if (tl === 'picker') {
-      parts.push(h('span', { class: 'muted small dr-hint', text: 'Tap a picture to pick up a colour (the other half of a split screen works too).' }));
+      parts.push(hint('Tap a picture to pick up a colour (the other half of a split screen works too).'));
+    } else if (tl === 'select') {
+      parts.push(seg('Select', [['rect', 'Rectangle', 'select'], ['lasso', 'Free shape', 'lasso'], ['wand', 'Colour area', 'wand']], prefs.selShape, set('selShape', () => { drawTools(); drawOptions(); })));
+      parts.push(seg('Selection', [['new', 'New'], ['add', 'Add'], ['subtract', 'Take away']], prefs.selOp, set('selOp')));
+      if (prefs.selShape === 'wand') {
+        parts.push(seg('Colour area', [[false, 'Connected'], [true, 'Everywhere']], prefs.wandAll, set('wandAll')));
+        if (mode === 'free') parts.push(slider('Tolerance', { name: 'tolerance', min: 0, max: 120, value: prefs.wandTol, show: v => `${v}`, onInput: v => { prefs.wandTol = v; savePrefs(); } }));
+      }
+      if (!isPhone()) parts.push(hint(prefs.selShape === 'wand' ? 'Tap a colour to select its area. Shift adds, Alt takes away.' : 'Drag to select. Drag inside the selection to move it (Ctrl: a copy). Shift adds, Alt takes away.'));
+    } else if (tl === 'polygon') {
+      parts.push(sizeSlider(mode), opacitySlider());
+      parts.push(seg('Shape', [[false, 'Outline'], [true, 'Filled']], prefs.filled, set('filled')));
+      const poly = workDoc()?.engine.polygon;
+      if (poly) {
+        parts.push(h('button', { type: 'button', class: 'btn btn-small', onclick: () => { workDoc()?.engine.polyBack(); redrawOverlays(); drawOptions(); } }, icon('undo', { size: 14 }), 'Undo corner'));
+        parts.push(h('button', { type: 'button', class: 'btn btn-small btn-primary', onclick: () => finishPolygon() }, icon('check', { size: 14 }), 'Done'));
+      } else parts.push(hint('Tap the corners. Tap the first corner again (or double-click) to finish.'));
+    } else if (tl === 'gradient') {
+      parts.push(seg('Gradient', [['straight', 'Straight'], ['round', 'Round']], prefs.gradShape, set('gradShape')));
+      parts.push(seg('Gradient colours', [['color2', 'To colour 2'], ['clear', 'To see-through']], prefs.gradTo, set('gradTo')));
+      if (!workDoc()?.engine.hasSelection) parts.push(seg('Gradient area', [['area', 'Tapped area'], ['all', 'Whole picture']], prefs.gradArea, set('gradArea')));
+      if (mode === 'pixel') {
+        parts.push(slider('Steps', { name: 'steps', min: 1, max: 16, value: prefs.gradSteps < 2 ? 1 : prefs.gradSteps, show: v => (v < 2 ? 'Smooth' : `${v}`), onInput: v => { prefs.gradSteps = v < 2 ? 0 : v; savePrefs(); } }));
+        parts.push(seg('Dither', [['off', 'No dither'], ['checker', 'Checker'], ['ordered', 'Ordered']], prefs.gradDither, set('gradDither')));
+      }
+      parts.push(opacitySlider());
+    } else if (tl === 'effect') {
+      const sel = h('select', { class: 'input dr-select', name: 'effect', 'aria-label': 'Effect' }, Object.entries(BRUSH_EFFECTS).map(([k, v]) => h('option', { value: k, text: v })));
+      sel.value = prefs.fx;
+      sel.addEventListener('change', () => set('fx')(sel.value));
+      parts.push(sel, sizeSlider(mode));
+      parts.push(slider('Strength', { name: 'strength', min: 1, max: 100, value: Math.round(prefs.fxStrength * 100), show: v => `${v}%`, onInput: v => { prefs.fxStrength = v / 100; savePrefs(); } }));
+      if (mode === 'free') parts.push(seg('Brush', [[false, 'Hard'], [true, 'Soft']], prefs.soft, set('soft')));
+      if (mode === 'pixel' && (prefs.fx === 'lighten' || prefs.fx === 'darken')) {
+        parts.push(check('Along the palette', 'alongPalette', prefs.fxAlongPalette, set('fxAlongPalette'), 'Each square steps to the next lighter (or darker) colour of the palette you chose'));
+      }
+      if (prefs.fx === 'dither') {
+        parts.push(seg('Pattern', [['checker', 'Checker'], ['ordered', 'Ordered']], prefs.fxDither, set('fxDither')));
+        if (!isPhone()) parts.push(hint('Paints colour 1 and colour 2 in a pattern. Strength = how much is colour 1.'));
+      }
+    } else if (tl === 'text') {
+      parts.push(hint('Tap where the text goes. You can drag it into place before tapping Done.'));
+    } else if (tl === 'stamp') {
+      const s = currentStamp();
+      parts.push(h('button', { type: 'button', class: 'btn btn-small dr-stamp-btn', title: 'Choose a stamp', onclick: chooseStamp },
+        s ? stampThumb(s, 12) : icon('stamp', { size: 14 }), s ? s.name : 'Choose a stamp'));
+      parts.push(seg('Stamp size', [[1, '1×'], [2, '2×'], [3, '3×'], [4, '4×']], prefs.stampSize, set('stampSize')));
+      parts.push(h('div', { class: 'dr-iconrow' },
+        toggleBtn('Mirror the stamp left-right', 'fliph', prefs.stampFlipX, () => set('stampFlipX')(!prefs.stampFlipX)),
+        toggleBtn('Mirror the stamp top-bottom', 'flipv', prefs.stampFlipY, () => set('stampFlipY')(!prefs.stampFlipY)),
+        toggleBtn(`Turn the stamp (now ${prefs.stampTurn}°)`, 'turnright', !!prefs.stampTurn, () => set('stampTurn')((prefs.stampTurn + 90) % 360))));
+      parts.push(seg('Stamp colours', [[false, 'Own colours'], [true, 'My colour']], prefs.stampTint, set('stampTint')));
+      parts.push(opacitySlider());
     } else {
       if (tl === 'eraser') parts.push(seg('Eraser', [[false, 'Brush'], [true, 'Tap a colour']], prefs.eraseTap, v => { prefs.eraseTap = v; savePrefs(); drawOptions(); redrawOverlays(); }));
       if (tapErase) {
         parts.push(seg('Erase', [[false, 'Connected'], [true, 'Everywhere']], prefs.eraseAll, v => { prefs.eraseAll = v; savePrefs(); drawOptions(); }));
-        parts.push(h('span', { class: 'muted small dr-hint', text: prefs.eraseAll ? 'Tap a colour: it goes everywhere.' : 'Tap a colour: the area of that colour it touches goes.' }));
+        parts.push(hint(prefs.eraseAll ? 'Tap a colour: it goes everywhere.' : 'Tap a colour: the area of that colour it touches goes.'));
       } else if (tl !== 'fill') {
-        parts.push(mode === 'pixel'
-          ? slider('Size', { name: 'size', min: 1, max: 16, value: prefs.pixelSize, show: v => `${v}`, onInput: v => { prefs.pixelSize = v; savePrefs(); } })
-          : slider('Size', { name: 'size', min: 0, max: 100, value: sizeToSlider(prefs.freeSize), show: v => `${sliderToSize(v)}`, onInput: v => { prefs.freeSize = sliderToSize(v); savePrefs(); } }));
+        parts.push(sizeSlider(mode));
       }
-      if (tl !== 'eraser') {
-        parts.push(slider('Opacity', { name: 'opacity', min: 5, max: 100, value: Math.round(prefs.opacity * 100), show: v => `${v}%`, onInput: v => { prefs.opacity = v / 100; savePrefs(); } }));
-      }
+      if (tl !== 'eraser') parts.push(opacitySlider());
       if ((tl === 'pen' || (tl === 'eraser' && !tapErase)) && mode === 'free') parts.push(seg('Brush', [[false, 'Hard'], [true, 'Soft']], prefs.soft, v => { prefs.soft = v; savePrefs(); drawOptions(); }));
       if (tl === 'pen' && mode === 'pixel') {
-        parts.push(h('label', { class: 'dr-check', title: 'Keeps lines one square thin: no extra squares in the corners' },
-          h('input', { type: 'checkbox', name: 'pixelPerfect', checked: prefs.pixelPerfect, onchange: e => { prefs.pixelPerfect = e.target.checked; savePrefs(); } }), 'Pixel-perfect'));
+        parts.push(check('Pixel-perfect', 'pixelPerfect', prefs.pixelPerfect, v => { prefs.pixelPerfect = v; savePrefs(); }, 'Keeps lines one square thin: no extra squares in the corners'));
       }
       if (tl === 'rect' || tl === 'ellipse') parts.push(seg('Shape', [[false, 'Outline'], [true, 'Filled']], prefs.filled, v => { prefs.filled = v; savePrefs(); drawOptions(); }));
       if (tl === 'fill') parts.push(seg('Fill', [[false, 'Connected'], [true, 'Everywhere']], prefs.fillAll, v => { prefs.fillAll = v; savePrefs(); drawOptions(); }));
     }
     clear(optsEl, parts);
+  }
+  const toggleBtn = (lbl, ic, on, fn) => h('button', { type: 'button', class: 'icon-btn dr-toggle', 'aria-label': lbl, title: lbl, 'aria-pressed': String(!!on), onclick: fn }, icon(ic, { size: 18 }));
+  async function chooseStamp() {
+    const id = await stampsDialog({ current: currentStamp()?.id });
+    await loadStamps();
+    if (id) { prefs.stamp = id; savePrefs(); drawOptions(); redrawOverlays(); }
+  }
+  function finishPolygon() {
+    const d = workDoc();
+    if (!d?.engine.polygon) return;
+    d.engine.polyClose();
+    d.drawOverlay();
+    drawOptions();
+    drawUndo();
+  }
+
+  /* ---------- The selection bar ---------- */
+
+  const barBtn = (lbl, ic, fn, { primary = false, text = false, disabled = false } = {}) => h('button', {
+    type: 'button', class: `${text ? 'btn btn-small' : 'icon-btn'} dr-selbtn${primary ? ' btn-primary' : ''}`, 'aria-label': lbl, title: lbl, disabled, onclick: fn,
+  }, icon(ic, { size: text ? 14 : 18 }), text ? lbl : null);
+
+  function drawSelBar() {
+    const d = workDoc();
+    const e = d?.engine;
+    const show = !!d && (e.hasSelection || prefs.tool === 'select');
+    selEl.hidden = !show;
+    if (!show) { clear(selEl); return; }
+    const mode = d.st.mode;
+    const parts = [];
+    if (e.floating) {
+      parts.push(barBtn('Done', 'check', () => commitFloat(), { primary: true, text: true }));
+      parts.push(barBtn('Put it back', 'close', () => { e.cancelFloat(); afterChange(d); }));
+      parts.push(h('span', { class: 'dr-sep' }));
+      parts.push(barBtn('Mirror left-right', 'fliph', () => { e.flipFloat(true); afterChange(d); }));
+      parts.push(barBtn('Mirror top-bottom', 'flipv', () => { e.flipFloat(false); afterChange(d); }));
+      parts.push(barBtn('Turn a quarter left', 'turnleft', () => { e.turnFloat(-1); afterChange(d); }));
+      parts.push(barBtn('Turn a quarter right', 'turnright', () => { e.turnFloat(1); afterChange(d); }));
+      const angle = slider('Angle', {
+        name: 'angle', min: -180, max: 180, value: Math.round(e.floatAngle), show: v => `${v}°`,
+        onInput: v => { angleTarget = v; if (!angleRaf) angleRaf = requestAnimationFrame(() => { angleRaf = 0; e.setFloatAngle(angleTarget); }); },
+      });
+      angle.classList.add('dr-angle');
+      angle.title = mode === 'pixel' ? 'Pixel art turns with RotSprite: lines stay clean, no blur' : 'Turns smoothly';
+      parts.push(angle);
+      parts.push(h('span', { class: 'dr-sep' }));
+      parts.push(barBtn('Copy', 'copy', () => copySel(d)));
+      parts.push(barBtn('Delete it', 'trash', () => { e.clearSelected(); afterChange(d); }));
+    } else if (e.hasSelection) {
+      // On a phone the less used ones are in More, so the bar stays one row.
+      const phone = isPhone();
+      parts.push(barBtn('Copy', 'copy', () => copySel(d)));
+      parts.push(barBtn('Cut', 'cut', () => cutSel(d)));
+      parts.push(barBtn('Paste', 'paste', () => pasteInto(d), { disabled: !clip }));
+      parts.push(barBtn('Delete what is selected', 'trash', () => { e.clearSelected(); afterChange(d); }));
+      if (!phone) parts.push(h('span', { class: 'dr-sep' }));
+      parts.push(barBtn('Mirror left-right', 'fliph', () => transform(d, f => f.flipFloat(true))));
+      if (!phone) parts.push(barBtn('Mirror top-bottom', 'flipv', () => transform(d, f => f.flipFloat(false))));
+      if (!phone) parts.push(barBtn('Turn a quarter left', 'turnleft', () => transform(d, f => f.turnFloat(-1))));
+      parts.push(barBtn('Turn a quarter right', 'turnright', () => transform(d, f => f.turnFloat(1))));
+      parts.push(barBtn('Turn by any angle', 'turnany', () => transform(d, () => {})));
+      const more = barBtn('More', 'sliders', () => selMenu(d, more));
+      parts.push(more);
+      parts.push(barBtn('Deselect', 'close', () => { e.deselect(); afterChange(d); }, { text: !phone }));
+    } else {
+      parts.push(barBtn('Paste', 'paste', () => pasteInto(d), { disabled: !clip, text: true }));
+      parts.push(barBtn('Select all', 'select', () => { e.selectAll(); afterChange(d); }, { text: true }));
+      parts.push(barBtn('Mirror the whole picture left-right', 'fliph', () => transform(d, f => f.flipFloat(true))));
+      parts.push(barBtn('Mirror the whole picture top-bottom', 'flipv', () => transform(d, f => f.flipFloat(false))));
+      parts.push(barBtn('Turn the whole picture', 'turnright', () => transform(d, f => f.turnFloat(1))));
+    }
+    clear(selEl, parts);
+  }
+  let angleTarget = 0, angleRaf = 0;
+  function afterChange(d) { d.drawOverlay(); drawSelBar(); drawUndo(); }
+  function commitFloat(d = workDoc()) { d?.engine.commitFloat(); if (d) afterChange(d); }
+  /** Lift what's selected (everything if nothing is) and change it; Done lays it down. */
+  function transform(d, fn) {
+    d.engine.lift({ mode: d.st.mode });
+    fn(d.engine);
+    afterChange(d);
+  }
+  function selMenu(d, anchor) {
+    const e = d.engine;
+    openPopup({
+      rect: anchor.getBoundingClientRect(), title: 'Selection',
+      items: [
+        isPhone() ? { label: 'Mirror top-bottom', icon: 'flipv', onPick: () => transform(d, f => f.flipFloat(false)) } : null,
+        isPhone() ? { label: 'Turn a quarter left', icon: 'turnleft', onPick: () => transform(d, f => f.turnFloat(-1)) } : null,
+        { label: 'Select all', icon: 'select', onPick: () => { e.selectAll(); afterChange(d); } },
+        { label: 'Select the rest', hint: 'everything else', icon: 'swap', onPick: () => { e.invertSelection(); afterChange(d); } },
+        { label: 'Save as stamp…', icon: 'stamp', onPick: () => saveSelAsStamp(d) },
+        { label: 'Deselect', icon: 'close', onPick: () => { e.deselect(); afterChange(d); } },
+      ].filter(Boolean),
+    });
+  }
+  function copySel(d) {
+    const { piece, at } = d.engine.copyPiece();
+    clip = { piece, k: d.engine.scale, pixel: d.st.mode === 'pixel' || d.rec.kind === 'pixel', at, from: d.id };
+    toast('Copied. Paste it here or in another drawing.');
+    drawSelBar();
+  }
+  function cutSel(d) {
+    copySel(d);
+    d.engine.clearSelected();
+    afterChange(d);
+  }
+  /** Paste what was copied: the same size in squares, where it was (or the middle of the screen). */
+  function pasteInto(d, item = clip) {
+    if (!d || !item) return;
+    const k = d.engine.scale, f = k / item.k;
+    const piece = f === 1 ? item.piece : scalePiece(item.piece, f, !item.pixel);
+    let x = Math.round(item.at.x * f), y = Math.round(item.at.y * f);
+    const c = d.viewCenter();
+    if (item.from !== d.id || x + piece.w <= 0 || y + piece.h <= 0 || x >= d.engine.W || y >= d.engine.H) { x = c.x - piece.w / 2; y = c.y - piece.h / 2; }
+    if (d.st.mode === 'pixel') { x = Math.round(x / k) * k; y = Math.round(y / k) * k; }
+    d.engine.pasteFloat(piece, { x, y, pixel: d.st.mode === 'pixel' });
+    afterChange(d);
+  }
+  /** A picture pasted from the computer: one pixel per square if it fits, otherwise fitted in. */
+  async function pastePicture(d, file) {
+    let bmp;
+    try { bmp = await createImageBitmap(file); } catch { toast("That picture couldn't be pasted."); return; }
+    const c = Object.assign(document.createElement('canvas'), { width: bmp.width, height: bmp.height });
+    c.getContext('2d').drawImage(bmp, 0, 0);
+    bmp.close?.();
+    const e = d.engine, k = e.scale;
+    const fits = c.width <= e.width && c.height <= e.height;
+    const f = fits ? k : Math.min(e.W / c.width, e.H / c.height, k);
+    const piece = scalePiece(pieceFromCanvas(c), f, !fits);
+    const mid = d.viewCenter();
+    d.engine.pasteFloat(piece, { x: Math.round((mid.x - piece.w / 2) / k) * k, y: Math.round((mid.y - piece.h / 2) / k) * k, pixel: d.st.mode === 'pixel' });
+    afterChange(d);
+    toast(fits ? 'Pasted, one pixel per square. Drag it into place, then tap Done.' : 'Pasted (made smaller to fit). Drag it into place, then tap Done.');
+  }
+  function saveSelAsStamp(d) {
+    const { piece } = d.engine.copyPiece();
+    const pixel = d.st.mode === 'pixel';
+    let canvas = piece.canvas, scale = d.engine.scale;
+    if (pixel) {
+      // Pixel stamps keep one pixel per square.
+      const cells = pieceCells(piece, scale);
+      canvas = cellsToPiece(cells, 1).canvas;
+      scale = 1;
+    }
+    saveStampDialog({ canvas, kind: pixel ? 'pixel' : 'free', scale }).then(() => loadStamps());
   }
 
   /* ---------- Colours: a side panel on a PC, a row with a colour button on a phone ---------- */
@@ -638,7 +962,8 @@ function createWorkspace() {
   const drawingColors = () => drawingDoc()?.engine.paletteColors() || [];
   let picker = null, pal = null;
   const recentPC = h('div', { class: 'dr-recent', 'aria-label': 'Recent colours' });
-  const swatch = (c, label) => h('button', { type: 'button', class: 'pal-sw', style: { '--c': c }, title: c, 'aria-label': `${label} ${c}`, dataset: { color: c }, onclick: () => setColor(c) });
+  const pairPC = h('div', { class: 'dr-pair-host' });
+  const swatch = (c, lbl) => h('button', { type: 'button', class: 'pal-sw', style: { '--c': c }, title: c, 'aria-label': `${lbl} ${c}`, dataset: { color: c }, onclick: () => setColor(c) });
   function setColor(hex) {
     hex = normHex(hex);
     if (!hex) return;
@@ -647,6 +972,31 @@ function createWorkspace() {
     picker?.set(hex);
     drawColors();
   }
+  function swapPair() {
+    [prefs.color, prefs.color2] = [prefs.color2, prefs.color];
+    savePrefs();
+    picker?.set(prefs.color);
+    drawColors();
+    if (prefs.tool === 'stamp') redrawOverlays();
+  }
+  async function pickColor2() {
+    const v = await pickColorDialog({ title: 'Colour 2', value: prefs.color2, drawingColors });
+    if (v && v !== 'keep') { prefs.color2 = normHex(v) || prefs.color2; savePrefs(); drawColors(); }
+  }
+  /** Colour 1 (big) with colour 2 behind it, and the swap button. */
+  function pairEl(phone) {
+    return h('div', { class: 'dr-pair' },
+      phone ? h('button', {
+        type: 'button', class: 'dr-current-btn', style: { '--c': prefs.color }, 'aria-label': `Colour ${prefs.color}: change it`, title: 'Change the colour',
+        onclick: async () => {
+          const v = await pickColorDialog({ title: 'Colour', value: prefs.color, drawingColors });
+          if (v && v !== 'keep') setColor(v);
+          loadRowPalette();
+        },
+      }) : h('span', { class: 'dr-pair-front', style: { '--c': prefs.color }, title: `Colour 1: ${prefs.color}` }),
+      h('button', { type: 'button', class: 'dr-pair-back', style: { '--c': prefs.color2 }, 'aria-label': `Colour 2 ${prefs.color2}: change it`, title: `Colour 2: ${prefs.color2} (for gradients and dither). Tap to change it.`, onclick: pickColor2 }),
+      h('button', { type: 'button', class: 'icon-btn dr-pair-swap', 'aria-label': 'Swap colour 1 and colour 2 (X)', title: 'Swap colour 1 and colour 2 (X)', onclick: swapPair }, icon('swap', { size: 16 })));
+  }
   function drawRecent() {
     clear(recentPC, prefs.recent.length ? prefs.recent.map(c => swatch(c, 'Recent colour')) : h('span', { class: 'muted small', text: 'Colours you draw with show up here.' }));
     drawColors();
@@ -654,15 +1004,8 @@ function createWorkspace() {
   let rowPalette = [];
   async function loadRowPalette() { rowPalette = await currentPaletteColors(); drawColors(); }
   function drawColors() {
-    const current = h('button', {
-      type: 'button', class: 'dr-current-btn', style: { '--c': prefs.color }, 'aria-label': `Colour ${prefs.color}: change it`, title: 'Change the colour',
-      onclick: async () => {
-        const v = await pickColorDialog({ title: 'Colour', value: prefs.color, drawingColors });
-        if (v && v !== 'keep') setColor(v);
-        loadRowPalette();
-      },
-    });
-    clear(colorsRow, current,
+    clear(pairPC, pairEl(false));
+    clear(colorsRow, pairEl(true),
       h('div', { class: 'dr-colors-scroll' },
         prefs.recent.filter(c => c !== prefs.color).slice(0, 6).map(c => swatch(c, 'Recent colour')),
         rowPalette.length ? h('span', { class: 'dr-colors-gap', 'aria-hidden': 'true' }) : null,
@@ -670,31 +1013,36 @@ function createWorkspace() {
   }
   function buildSide() {
     picker = colorPicker({ value: prefs.color, onInput: v => { prefs.color = v; savePrefs(); drawColors(); } });
-    pal = palettePanel({ getColor: () => prefs.color, onPick: setColor, drawingColors });
+    pal = palettePanel({ getColor: () => prefs.color, onPick: setColor, drawingColors, onChoose: () => loadRowPalette() });
     clear(side,
-      h('h2', { class: 'dr-side-title', text: 'Colour' }), picker.el,
+      h('h2', { class: 'dr-side-title', text: 'Colour' }), pairPC, picker.el,
       h('h2', { class: 'dr-side-title', text: 'Recent' }), recentPC,
       h('h2', { class: 'dr-side-title', text: 'Palette' }), pal.el);
   }
   buildSide();
-  store.on(e => { if (mounted && (e?.type === 'sync' || e?.collection === 'palettes')) loadRowPalette(); });
+  store.on(e => {
+    if (!mounted) return;
+    if (e?.type === 'sync' || e?.collection === 'palettes') loadRowPalette();
+    if (e?.type === 'sync' || e?.collection === 'stamps') loadStamps();
+  });
 
   /* ---------- Top bar ---------- */
 
   const zoomText = h('span', { class: 'dr-zoom muted small' });
   const statusEl = h('span', { class: 'dr-status muted small', role: 'status' });
   const nameBtn = h('button', { type: 'button', class: 'dr-name', title: 'Name, section and idea', onclick: () => details() });
-  const undoBtn = h('button', { type: 'button', class: 'icon-btn', 'aria-label': 'Undo', title: 'Undo (Ctrl+Z)', onclick: () => activeDoc()?.undo() }, icon('undo', { size: 20 }));
-  const redoBtn = h('button', { type: 'button', class: 'icon-btn', 'aria-label': 'Redo', title: 'Redo (Ctrl+Y)', onclick: () => activeDoc()?.redo() }, icon('redo', { size: 20 }));
+  const undoBtn = h('button', { type: 'button', class: 'icon-btn', 'aria-label': 'Undo', title: 'Undo (Ctrl+Z)', onclick: () => { activeDoc()?.undo(); drawSelBar(); } }, icon('undo', { size: 20 }));
+  const redoBtn = h('button', { type: 'button', class: 'icon-btn', 'aria-label': 'Redo', title: 'Redo (Ctrl+Y)', onclick: () => { activeDoc()?.redo(); drawSelBar(); } }, icon('redo', { size: 20 }));
   function drawUndo() { const d = activeDoc(); undoBtn.disabled = !d?.canUndo(); redoBtn.disabled = !d?.canRedo(); }
-  const toggle = (label, ic, on, fn, cls = '') => h('button', { type: 'button', class: `icon-btn dr-toggle ${cls}`, 'aria-label': label, title: label, 'aria-pressed': String(!!on), onclick: fn }, icon(ic, { size: 20 }));
+  const toggle = (lbl, ic, on, fn, cls = '') => h('button', { type: 'button', class: `icon-btn dr-toggle ${cls}`, 'aria-label': lbl, title: lbl, 'aria-pressed': String(!!on), onclick: fn }, icon(ic, { size: 20 }));
   function drawTop() {
     const d = activeDoc();
     if (!d) { clear(topEl); return; }
     nameBtn.textContent = d.rec.name;
     statusEl.textContent = d.status;
     zoomText.textContent = d.zoomText;
-    const more = h('button', { type: 'button', class: 'icon-btn', 'aria-label': 'More', title: 'Split screen, swap colours, grayscale, export…', onclick: () => menu(more) }, '⋯');
+    const more = h('button', { type: 'button', class: 'icon-btn', 'aria-label': 'More', title: 'Effects, split screen, export…', onclick: () => menu(more) }, '⋯');
+    const fxBtn = d.isRef ? null : h('button', { type: 'button', class: 'icon-btn dr-pc', 'aria-label': 'Effects', title: 'Effects: colours, blur, noise, pixelate, outline…', onclick: () => effectsMenu(fxBtn) }, icon('sparkle', { size: 20 }));
     const mirrorBtn = d.isRef ? null : h('button', {
       type: 'button', class: 'icon-btn dr-toggle dr-pc', 'aria-label': `Mirror drawing: ${MIRRORS[d.st.mirror]}`, title: `Mirror drawing: ${MIRRORS[d.st.mirror]}`,
       'aria-pressed': String(d.st.mirror !== 'none'), onclick: () => mirrorMenu(mirrorBtn),
@@ -711,8 +1059,9 @@ function createWorkspace() {
         d.isRef ? null : [
           h('span', { class: 'dr-sep dr-pc' }),
           toggle('Grid', 'grid', d.st.grid, toggleGrid, 'dr-pc'),
-          toggle('Tiles: see it repeated, for blocks', 'tiles', d.st.tiles, toggleTiles, 'dr-pc'),
+          toggle('Tiles: see it repeated, for blocks (you can draw across the edges)', 'tiles', d.st.tiles, toggleTiles, 'dr-pc'),
           mirrorBtn,
+          fxBtn,
         ],
         more));
     drawUndo();
@@ -723,8 +1072,35 @@ function createWorkspace() {
     const d = activeDoc();
     openPopup({
       rect: anchor.getBoundingClientRect(), title: 'Mirror drawing',
-      items: Object.entries(MIRRORS).map(([k, label]) => ({ label, hint: d.st.mirror === k ? '✓' : '', icon: k === 'none' ? 'close' : 'mirror', onPick: () => { d.setMirror(k); drawTop(); } })),
+      items: Object.entries(MIRRORS).map(([k, lbl]) => ({ label: lbl, hint: d.st.mirror === k ? '✓' : '', icon: k === 'none' ? 'close' : 'mirror', onPick: () => { d.setMirror(k); drawTop(); } })),
     });
+  }
+  function effectsMenu(anchor) {
+    const d = workDoc();
+    if (!d) return;
+    const where = d.engine.hasSelection ? ' (selection)' : '';
+    openPopup({
+      rect: anchor.getBoundingClientRect(), title: `Effects${where}`,
+      items: [
+        ...Object.entries(EFFECTS).map(([k, v]) => ({ label: `${v.name}…`, icon: v.icon, onPick: () => runEffect(k) })),
+        { label: 'Swap colours…', icon: 'swap', onPick: swapColors },
+        { label: 'Make it grayscale…', icon: 'gray', onPick: grayscale },
+      ],
+    });
+  }
+  async function runEffect(kind) {
+    const d = workDoc();
+    if (!d) return;
+    const r = await effectDialog(kind, { engine: d.engine, mode: d.st.mode, prefs, pixelArt: d.rec.kind === 'pixel' });
+    if (!r) return;
+    if (r.copy) {
+      await d.flush();
+      await copyWithImage({ id: d.id, data: d.rec }, ctx.ui, r.image, EFFECTS[kind].copyLabel);
+      return;
+    }
+    if (d.engine.applyEffect(r.fn, d.st.mode)) toast(`${EFFECTS[kind].done} Undo brings it back.`);
+    else toast('Nothing changed.');
+    afterChange(d);
   }
   function menu(anchor) {
     const d = activeDoc();
@@ -738,19 +1114,35 @@ function createWorkspace() {
         phone && !ref ? { label: d.st.grid ? 'Hide the grid' : 'Show the grid', icon: 'grid', onPick: toggleGrid } : null,
         phone && !ref ? { label: d.st.tiles ? 'Stop showing tiles' : 'Tiles (see it repeated)', icon: 'tiles', onPick: toggleTiles } : null,
         phone && !ref ? { label: 'Mirror drawing…', hint: MIRRORS[d.st.mirror], icon: 'mirror', onPick: () => mirrorMenu(anchor) } : null,
+        ref ? null : { label: 'Effects…', hint: 'colours, blur, outline…', icon: 'sparkle', onPick: () => effectsMenu(anchor) },
         splitShown() ? { label: 'Swap sides', icon: 'swap', onPick: swapSides } : null,
         splitShown() ? { label: 'Close split screen', icon: 'close', onPick: closeSplit }
           : others.length ? { label: 'Split screen with…', icon: 'split', onPick: () => splitList(anchor) } : null,
         { label: 'Add a reference picture…', icon: 'image', onPick: () => addReference() },
-        ref ? null : { label: 'Swap colours…', icon: 'swap', onPick: swapColors },
-        ref ? null : { label: 'Make it grayscale…', icon: 'gray', onPick: grayscale },
         ref ? null : { label: 'Export PNG…', icon: 'download', onPick: () => exportDialog({ id: d.id, data: d.rec }, d.engine) },
+        ref ? null : { label: 'Use as a wiki page picture…', icon: 'book', onPick: async () => { await d.flush(); drawingToWikiDialog({ id: d.id, data: d.rec }, d.engine); } },
+        ref ? null : { label: 'Use this drawing as a stamp…', icon: 'stamp', onPick: () => drawingAsStamp(d) },
         { label: 'Name, section and idea…', icon: 'edit', onPick: details },
         ref ? null : { label: 'Duplicate', icon: 'copy', onPick: async () => { await d.flush(); duplicateDrawing({ id: d.id, data: d.rec }, ctx.ui); } },
         { label: 'Close this tab', icon: 'close', onPick: () => closeTab(d.id) },
         { label: ref ? 'Delete this picture' : 'Delete this drawing', icon: 'trash', onPick: remove },
       ].filter(Boolean),
     });
+  }
+  function drawingAsStamp(d) {
+    d.engine.finishPending();
+    const e = d.engine;
+    const pixel = d.rec.kind === 'pixel';
+    let canvas = pixel ? e.exportCanvas(1) : e.canvas;
+    // Trim the see-through space around it.
+    const g = canvas.getContext('2d', { willReadFrequently: true });
+    const data = g.getImageData(0, 0, canvas.width, canvas.height).data;
+    let x0 = canvas.width, y0 = canvas.height, x1 = -1, y1 = -1;
+    for (let y = 0; y < canvas.height; y++) for (let x = 0; x < canvas.width; x++) if (data[(y * canvas.width + x) * 4 + 3]) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+    if (x1 < 0) { toast('The drawing is empty: nothing to make a stamp of.'); return; }
+    const t = Object.assign(document.createElement('canvas'), { width: x1 - x0 + 1, height: y1 - y0 + 1 });
+    t.getContext('2d').drawImage(canvas, -x0, -y0);
+    saveStampDialog({ canvas: t, kind: pixel ? 'pixel' : 'free', scale: pixel ? 1 : e.scale, name: d.rec.name }).then(() => loadStamps());
   }
 
   async function details() {
@@ -762,7 +1154,9 @@ function createWorkspace() {
     layout();
   }
   async function swapColors() {
-    const d = activeDoc();
+    const d = workDoc();
+    if (!d) return;
+    d.engine.finishPending();
     const r = await swapColorsDialog(d.engine, { pixel: d.rec.kind === 'pixel' });
     if (!r) return;
     if (r.copy) {
@@ -774,10 +1168,11 @@ function createWorkspace() {
     toast('Colours swapped. Undo brings the old ones back.');
   }
   async function grayscale() {
-    const d = activeDoc();
+    const d = workDoc();
+    if (!d) return;
     const how = await choiceDialog({
       title: 'Make it grayscale?',
-      body: h('p', { text: 'Every colour becomes the gray of the same brightness, like Minecraft textures that the game tints (grass, leaves).' }),
+      body: h('p', { text: `Every colour${d.engine.hasSelection ? ' in the selection' : ''} becomes the gray of the same brightness, like Minecraft textures that the game tints (grass, leaves).` }),
       choices: [{ id: 'copy', label: 'Make a gray copy' }, { id: 'here', label: 'Change this drawing', kind: 'primary' }],
     });
     if (how === 'here') { if (d.engine.grayscale()) toast('Grayscale. Undo brings the colours back.'); else toast('It has no colours to change.'); }
@@ -810,13 +1205,46 @@ function createWorkspace() {
     const el = document.activeElement;
     if (textField(el)) return;
     const d = activeDoc();
+    const eng = d && !d.isRef ? d.engine : null;
     const mod = e.ctrlKey || e.metaKey;
     const key = String(e.key || '').toLowerCase();
-    if (mod && (e.code === 'KeyZ' || key === 'z')) { e.preventDefault(); if (e.shiftKey) d?.redo(); else d?.undo(); return; }
+    if (mod && (e.code === 'KeyZ' || key === 'z')) { e.preventDefault(); if (e.shiftKey) d?.redo(); else d?.undo(); drawSelBar(); return; }
     if (mod && (e.code === 'KeyY' || key === 'y')) { e.preventDefault(); d?.redo(); return; }
-    if (mod || e.altKey || el?.tagName === 'SELECT') return;
+    if (mod && eng) {
+      if (e.code === 'KeyA') { e.preventDefault(); eng.selectAll(); afterChange(d); return; }
+      if (e.code === 'KeyD') { e.preventDefault(); eng.deselect(); afterChange(d); return; }
+      if (e.code === 'KeyC') { e.preventDefault(); copySel(d); return; }
+      if (e.code === 'KeyX') { e.preventDefault(); cutSel(d); return; }
+      // Ctrl+V comes in as a "paste" event (which also brings pictures from outside).
+      return;
+    }
+    if (e.altKey || el?.tagName === 'SELECT') return;
     if (e.code === 'Space') { spaceDown = true; root.classList.add('is-space'); e.preventDefault(); return; }
-    if (e.key === 'Escape') { d?.cancelStroke(); return; }
+    if (e.key === 'Escape') {
+      if (eng?.floating) { eng.cancelFloat(); afterChange(d); return; }
+      if (eng?.polygon) { eng.polyCancel(); d.drawOverlay(); drawOptions(); return; }
+      if (d?.busy) { d.cancelStroke(); return; }
+      if (eng?.hasSelection) { eng.deselect(); afterChange(d); }
+      return;
+    }
+    if (e.key === 'Enter' && eng) {
+      if (eng.floating) { e.preventDefault(); commitFloat(d); return; }
+      if (eng.polygon) { e.preventDefault(); finishPolygon(); return; }
+    }
+    if ((e.key === 'Delete' || e.key === 'Backspace') && eng) {
+      if (eng.polygon) { e.preventDefault(); eng.polyBack(); d.drawOverlay(); drawOptions(); return; }
+      if (eng.hasSelection) { e.preventDefault(); eng.clearSelected(); afterChange(d); return; }
+    }
+    if (e.key.startsWith('Arrow') && eng?.hasSelection) {
+      e.preventDefault();
+      if (!eng.floating) eng.lift({ mode: d.st.mode });
+      const n = e.shiftKey ? 10 : 1;
+      eng.nudgeFloat(e.key === 'ArrowLeft' ? -n : e.key === 'ArrowRight' ? n : 0, e.key === 'ArrowUp' ? -n : e.key === 'ArrowDown' ? n : 0);
+      afterChange(d);
+      return;
+    }
+    if (e.shiftKey && eng?.hasSelection && (e.code === 'KeyH' || e.code === 'KeyV')) { transform(d, f => f.flipFloat(e.code === 'KeyH')); return; }
+    if (e.code === 'KeyX') { swapPair(); return; }
     const tl = TOOLS.find(x => x.code === e.code);
     if (tl) { setTool(tl.id); return; }
     if (e.code === 'KeyP') { setMode(penMode() === 'pixel' ? 'free' : 'pixel'); return; }
@@ -828,7 +1256,18 @@ function createWorkspace() {
       savePrefs(); drawOptions(); redrawOverlays();
     }
   };
-  const onResize = () => { if (mounted && tabs.split && splitShown()) layout(); };
+  /** Ctrl+V: a picture copied on the computer, or what was copied here. */
+  const onPaste = e => {
+    if (document.querySelector('dialog[open]') || textField(document.activeElement)) return;
+    const d = workDoc();
+    if (!d) return;
+    const file = [...(e.clipboardData?.items || [])].find(i => i.kind === 'file' && i.type.startsWith('image/'))?.getAsFile();
+    e.preventDefault();
+    if (file) pastePicture(d, file);
+    else if (clip) pasteInto(d);
+    else toast('Nothing to paste yet: copy part of a drawing first.');
+  };
+  const onResize = () => { if (mounted) { drawTools(); if (tabs.split && splitShown()) layout(); } };
 
   /* ---------- Showing the workspace ---------- */
 
@@ -852,9 +1291,11 @@ function createWorkspace() {
       document.body.classList.add('dr-open');
       document.addEventListener('keydown', onKey);
       document.addEventListener('keyup', onKey);
+      document.addEventListener('paste', onPaste);
       addEventListener('resize', onResize);
       drawRecent();
       loadRowPalette();
+      loadStamps();
       pal?.reload();
       layout();
       if (!ctx.drawings.get(id)) { toast("That drawing doesn't exist (anymore)."); syncHash(); }
@@ -868,6 +1309,7 @@ function createWorkspace() {
         mounted = false;
         document.removeEventListener('keydown', onKey);
         document.removeEventListener('keyup', onKey);
+        document.removeEventListener('paste', onPaste);
         removeEventListener('resize', onResize);
         document.body.classList.remove('dr-open');
         closePopup();

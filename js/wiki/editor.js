@@ -15,6 +15,7 @@ import { richText, pageItems, linkChip } from './richtext.js';
 import { openPopup, currentPopup, closePopup } from './popup.js';
 import { blockEditor } from './blocks.js';
 import { saveImage, filesOfPage, isPicturePath } from './images.js';
+import { chooseDrawingBlob } from '../draw/wikipic.js';
 import { confirmDeletePage, removePageAndFiles } from './actions.js';
 
 const APP_TITLE = "Batataman's Reimagined";
@@ -165,6 +166,12 @@ export function editorView(el, wiki, ui, id) {
     }
   }
 
+  /** One of your drawings as a picture (a copy). */
+  async function chooseDrawing() {
+    const blob = await chooseDrawingBlob();
+    return blob ? addImageFile(blob) : null;
+  }
+
   function chooseImage() {
     return new Promise(resolve => {
       fileInput.value = '';
@@ -294,6 +301,10 @@ export function editorView(el, wiki, ui, id) {
             type: 'button', class: 'btn btn-small',
             onclick: async () => { const p = await chooseImage(); if (p) { draft.picture = p; changed(); draw(); } },
           }, icon('image', { size: 16 }), draft.picture ? 'Change picture' : 'Choose a picture'),
+          h('button', {
+            type: 'button', class: 'btn btn-small btn-quiet', title: 'Use one of your drawings (a copy of it)',
+            onclick: async () => { const p = await chooseDrawing(); if (p) { draft.picture = p; changed(); draw(); } },
+          }, icon('brush', { size: 16 }), 'From a drawing'),
           draft.picture ? h('button', {
             type: 'button', class: 'btn btn-small btn-quiet',
             onclick: () => { delete draft.picture; changed(); draw(); },
@@ -346,6 +357,10 @@ export function editorView(el, wiki, ui, id) {
             type: 'button', class: 'btn btn-small',
             onclick: async () => { const p = await chooseImage(); if (p) setValue(p); },
           }, icon('image', { size: 16 }), pic ? 'Change picture' : 'Choose a picture or GIF'),
+          h('button', {
+            type: 'button', class: 'btn btn-small btn-quiet', title: 'Use one of your drawings (a copy of it)',
+            onclick: async () => { const p = await chooseDrawing(); if (p) setValue(p); },
+          }, icon('brush', { size: 16 }), 'From a drawing'),
           pic || oldText ? h('button', { type: 'button', class: 'btn btn-small btn-quiet', onclick: () => setValue('') }, 'Remove') : null),
         pic ? null : h('p', { class: 'muted small', text: 'A screenshot of the recipe works well; GIFs keep their animation.' })),
       removable ? h('button', {

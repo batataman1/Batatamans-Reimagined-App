@@ -26,6 +26,7 @@ node dev/test/tasks.mjs    # Tasks & Bugs: quick add, folders, filters, list/boa
 node dev/test/ideas.mjs    # Ideas: sections, outline, folding, idea page, make a task, copy ideas, phone
 node dev/test/mindmap.mjs  # Mind map: select, drag, select mode, menus, connections, fold, tidy, undo, zoom, phone pinch
 node dev/test/drawing.mjs  # Drawings: pixel/free pens, tools, mirror, tiles, swap colours, grayscale, palettes, export, sync, phone
+node dev/test/draw2e.mjs   # Drawing tools 2e: selections (move, copy, paste, flip, RotSprite turns), polygon, gradient, effect brush, Effects, text, stamps, Tiles wrap, wiki picture, phone
 node dev/test/sw.mjs       # offline loading and the "new version" prompt
 ```
 

@@ -46,8 +46,10 @@ export function createDoc(d, ws) {
     catch (err) { unsaved = true; setStatus('Not saved'); errorDialog(err, "The drawing couldn't be saved"); }
     finally { saving = null; }
   }
-  const flush = async () => { await saving; await save(); };
+  // Before saving: lay down a floating piece and finish a polygon, so the picture is complete.
+  const flush = async () => { engine?.finishPending(); await saving; await save(); };
   if (engine) {
+    engine.onSelection = () => { drawOverlay(); ws.selectionChanged?.(doc); };
     engine.onChange = () => {
       unsaved = true;
       setStatus('Saving soon…');
@@ -103,10 +105,13 @@ export function createDoc(d, ws) {
     const r = stage.getBoundingClientRect();
     if (!r.width || !r.height) return;
     const n = st.tiles ? 3 : 1;
-    fitK = Math.min(zoomMax, (r.width - 24) / (W * n), (r.height - 24) / (H * n));
-    view = { k: fitK, tx: (r.width - W * fitK) / 2, ty: (r.height - H * fitK) / 2 };
+    // Room for the selection bar that floats over the pictures (top on a PC, bottom on a phone).
+    const inset = isRef ? { top: 0, bottom: 0 } : ws.fitInset?.() || { top: 0, bottom: 0 };
+    const hh = r.height - inset.top - inset.bottom;
+    fitK = Math.min(zoomMax, (r.width - 24) / (W * n), (hh - 24) / (H * n));
+    view = { k: fitK, tx: (r.width - W * fitK) / 2, ty: inset.top + (hh - H * fitK) / 2 };
     fitted = true;
-    lastSize = { w: r.width, h: r.height };
+    lastSize = { w: r.width, h: r.height, left: r.left, top: r.top };
     applyView();
   }
   const zoomMin = () => Math.min(fitK, 1) * 0.25;
@@ -121,13 +126,16 @@ export function createDoc(d, ws) {
   const local = e => { const r = stage.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
   const toFine = q => ({ x: (q.x - view.tx) / view.k, y: (q.y - view.ty) / view.k });
 
-  // When the pane changes size (split screen, the divider, the window), keep the middle in the middle.
+  // When the pane changes size: if only a bar above or below it changed (same width), the picture
+  // stays exactly where it is on the screen; otherwise (split screen, the divider, the window)
+  // the middle stays in the middle.
   const ro = new ResizeObserver(() => {
     const r = stage.getBoundingClientRect();
     if (!r.width || !r.height) return;
     if (!fitted || !loaded) { if (loaded) fit(); else drawOverlay(); return; }
-    if (lastSize) view = { ...view, tx: view.tx + (r.width - lastSize.w) / 2, ty: view.ty + (r.height - lastSize.h) / 2 };
-    lastSize = { w: r.width, h: r.height };
+    if (lastSize && Math.abs(r.width - lastSize.w) < 0.5 && lastSize.top !== undefined) view = { ...view, tx: view.tx + lastSize.left - r.left, ty: view.ty + lastSize.top - r.top };
+    else if (lastSize) view = { ...view, tx: view.tx + (r.width - lastSize.w) / 2, ty: view.ty + (r.height - lastSize.h) / 2 };
+    lastSize = { w: r.width, h: r.height, left: r.left, top: r.top };
     applyView();
   });
   ro.observe(stage);
@@ -170,8 +178,20 @@ export function createDoc(d, ws) {
       g.stroke();
       g.restore();
     }
+    if (!isRef) drawMarks(g, x0, y0, cell);
     const brush = !isRef && ws.brushOutline();
-    if (hover && !gesture && brush) {
+    if (hover && !gesture && brush?.stamp) {
+      const sw = brush.stamp.w * view.k, sh = brush.stamp.h * view.k;
+      let sx = hover.x - sw / 2, sy = hover.y - sh / 2;
+      if (st.mode === 'pixel') { const f = toFine({ x: sx, y: sy }); sx = x0 + Math.round(f.x / rec.scale) * cell; sy = y0 + Math.round(f.y / rec.scale) * cell; }
+      g.save();
+      g.setLineDash([4, 3]);
+      g.strokeStyle = 'rgba(255,255,255,0.95)';
+      g.shadowColor = 'rgba(0,0,0,0.9)';
+      g.shadowBlur = 2;
+      g.strokeRect(Math.round(sx) + 0.5, Math.round(sy) + 0.5, Math.round(sw) - 1, Math.round(sh) - 1);
+      g.restore();
+    } else if (hover && !gesture && brush) {
       g.save();
       g.lineWidth = 1;
       g.strokeStyle = 'rgba(255,255,255,0.95)';
@@ -190,6 +210,98 @@ export function createDoc(d, ws) {
     }
   }
 
+  /** Marching ants: the selection's outline, dashed black and white, moving. */
+  let ants = 0;
+  const antsTimer = isRef ? null : setInterval(() => {
+    if (!engine.hasSelection || !stage.isConnected || document.hidden) return;
+    ants = (ants + 1) % 8;
+    drawOverlay();
+  }, 160);
+  const scr = p => ({ x: view.tx + p.x * view.k, y: view.ty + p.y * view.k });
+  /** Selection outline, the selection being drawn, polygon corners, the gradient's line. */
+  function drawMarks(g) {
+    const sel = engine.selection;
+    if (sel) {
+      g.save();
+      g.beginPath();
+      const d = sel.segs;
+      for (let i = 0; i < d.length; i += 4) {
+        const a = scr({ x: d[i] + sel.x, y: d[i + 1] + sel.y }), b = scr({ x: d[i + 2] + sel.x, y: d[i + 3] + sel.y });
+        g.moveTo(Math.round(a.x) + 0.5, Math.round(a.y) + 0.5);
+        g.lineTo(Math.round(b.x) + 0.5, Math.round(b.y) + 0.5);
+      }
+      g.lineWidth = 1;
+      g.strokeStyle = '#fff';
+      g.stroke();
+      g.setLineDash([4, 4]);
+      g.lineDashOffset = -ants;
+      g.strokeStyle = '#000';
+      g.stroke();
+      if (sel.floating) {
+        // A floating piece: a faint box around it (drag it to move).
+        const a = scr({ x: sel.box.x0, y: sel.box.y0 }), b = scr({ x: sel.box.x1, y: sel.box.y1 });
+        g.setLineDash([]);
+        g.strokeStyle = accentColor();
+        g.globalAlpha = 0.7;
+        g.strokeRect(Math.round(a.x) - 2.5, Math.round(a.y) - 2.5, Math.round(b.x - a.x) + 5, Math.round(b.y - a.y) + 5);
+      }
+      g.restore();
+    }
+    if (gesture?.kind === 'select' && gesture.moved) {
+      g.save();
+      g.setLineDash([5, 4]);
+      g.lineWidth = 1.5;
+      g.strokeStyle = accentColor();
+      g.beginPath();
+      if (gesture.shape === 'rect') {
+        let a = gesture.pts[0], b = gesture.pts[gesture.pts.length - 1];
+        if (st.mode === 'pixel') {
+          const k = rec.scale, ca = engine.cellOf(a), cb = engine.cellOf(b);
+          a = { x: Math.min(ca.x, cb.x) * k, y: Math.min(ca.y, cb.y) * k };
+          b = { x: (Math.max(ca.x, cb.x) + 1) * k, y: (Math.max(ca.y, cb.y) + 1) * k };
+        }
+        const A = scr(a), B = scr(b);
+        g.rect(Math.min(A.x, B.x), Math.min(A.y, B.y), Math.abs(B.x - A.x), Math.abs(B.y - A.y));
+      } else {
+        gesture.pts.forEach((p, i) => { const P = scr(p); if (i) g.lineTo(P.x, P.y); else g.moveTo(P.x, P.y); });
+        g.closePath();
+      }
+      g.stroke();
+      g.restore();
+    }
+    const poly = engine.polygon;
+    if (poly) {
+      g.save();
+      poly.pts.forEach((p, i) => {
+        const P = scr(p), r = i === 0 && poly.pts.length >= 3 ? 7 : 4;
+        g.fillStyle = i === 0 && poly.pts.length >= 3 ? accentColor() : '#fff';
+        g.strokeStyle = '#000';
+        g.lineWidth = 1.5;
+        g.beginPath();
+        g.rect(P.x - r, P.y - r, r * 2, r * 2);
+        g.fill();
+        g.stroke();
+      });
+      g.restore();
+    }
+    const gl = engine.gradientLine;
+    if (gl) {
+      const A = scr(gl.a), B = scr(gl.b);
+      g.save();
+      g.lineWidth = 2;
+      g.strokeStyle = '#fff';
+      g.shadowColor = 'rgba(0,0,0,0.9)';
+      g.shadowBlur = 3;
+      g.beginPath();
+      g.moveTo(A.x, A.y); g.lineTo(B.x, B.y);
+      g.stroke();
+      for (const P of [A, B]) { g.beginPath(); g.arc(P.x, P.y, 5, 0, Math.PI * 2); g.stroke(); }
+      g.restore();
+    }
+  }
+  let accent = null;
+  const accentColor = () => (accent ||= getComputedStyle(stage).getPropertyValue('--accent').trim() || '#2bb3c0');
+
   /* ---------- Touch and mouse ---------- */
 
   const pointers = new Map();
@@ -200,6 +312,7 @@ export function createDoc(d, ws) {
     if (gesture?.kind !== 'draw') return;
     for (const p of gesture.queue.splice(0)) engine.move(p, { constrain: gesture.constrain });
     engine.show();
+    if (engine.gradientLine) drawOverlay();
     tilesSoon();
   }
   const schedule = () => { if (!raf) raf = requestAnimationFrame(run); };
@@ -250,22 +363,101 @@ export function createDoc(d, ws) {
       stage.classList.add('is-panning');
       return;
     }
-    if (isRef || ws.prefs.tool === 'picker' || (e.altKey && e.pointerType === 'mouse')) {
+    if (isRef || ws.prefs.tool === 'picker' || (e.altKey && e.pointerType === 'mouse' && ws.prefs.tool !== 'select')) {
       // A tap picks the colour; dragging moves the picture.
       gesture = { kind: 'tap', id: e.pointerId, start: q, view: { ...view }, moved: false };
       return;
     }
     ws.activate(doc);
     const p = toFine(q);
+    const tool = ws.prefs.tool;
+    // A floating piece (moved, pasted or text) can be dragged with any tool.
+    if (engine.floating && engine.hitFloat(p, 3 / view.k)) {
+      gesture = { kind: 'float', id: e.pointerId, start: q, c0: engine.floatCenter };
+      stage.classList.add('is-moving');
+      return;
+    }
+    if (tool === 'select') { startSelect(e, q, p); return; }
+    if (tool === 'polygon') { polygonDown(e, q, p); return; }
+    if (tool === 'text') { gesture = { kind: 'text', id: e.pointerId, start: q, moved: false }; return; }
     const o = ws.strokeOptions(doc);
-    if (o.tool !== 'eraser' && o.opacity > 0) ws.remember(o.color);
+    if (!['eraser', 'effect', 'stamp'].includes(o.tool) && o.opacity > 0) ws.remember(o.color);
     const started = engine.begin(o, p);
     gesture = started ? { kind: 'draw', id: e.pointerId, t0: performance.now(), queue: [], constrain: e.shiftKey } : { kind: 'done', id: e.pointerId };
     drawOverlay();
   });
+
+  function startSelect(e, q, p) {
+    const op = e.shiftKey ? 'add' : e.altKey ? 'subtract' : ws.prefs.selOp;
+    if (engine.floating) engine.commitFloat();
+    if (op === 'new' && ws.prefs.selShape !== 'wand' && engine.inSelection(p)) {
+      // Dragging inside the selection moves what's selected (Ctrl: a copy of it).
+      gesture = { kind: 'maybeLift', id: e.pointerId, start: q, copy: e.ctrlKey || e.metaKey };
+      return;
+    }
+    gesture = { kind: 'select', id: e.pointerId, start: q, shape: ws.prefs.selShape, op, pts: [p], moved: false };
+  }
+  function polygonDown(e, q, p) {
+    const poly = engine.polygon;
+    if (poly && poly.pts.length >= 3) {
+      const f = scr(poly.pts[0]);
+      if (Math.hypot(q.x - f.x, q.y - f.y) < (e.pointerType === 'mouse' ? 10 : 18)) {
+        engine.polyClose();
+        gesture = { kind: 'done', id: e.pointerId };
+        ws.changed(doc);
+        drawOverlay();
+        return;
+      }
+    }
+    const o = ws.strokeOptions(doc);
+    if (!poly && o.opacity > 0) ws.remember(o.color);
+    engine.polyAdd(o, p);
+    gesture = { kind: 'poly', id: e.pointerId };
+    ws.changed(doc);
+    drawOverlay();
+  }
   stage.addEventListener('pointermove', e => {
-    if (e.pointerType === 'mouse') { hover = local(e); if (!gesture) drawOverlay(); }
+    if (e.pointerType === 'mouse') {
+      hover = local(e);
+      if (!gesture && engine) {
+        const p = toFine(hover);
+        stage.classList.toggle('over-float', engine.floating && engine.hitFloat(p, 3 / view.k));
+        if (ws.prefs.tool === 'polygon' && engine.polygon) engine.polyHover(p, e.shiftKey);
+      }
+      if (!gesture) drawOverlay();
+    }
     if (!pointers.has(e.pointerId)) return;
+    if (gesture?.id === e.pointerId && gesture.kind === 'maybeLift') {
+      const q = local(e);
+      if (Math.hypot(q.x - gesture.start.x, q.y - gesture.start.y) < 4) return;
+      engine.lift({ mode: st.mode, copy: gesture.copy });
+      gesture = { kind: 'float', id: e.pointerId, start: gesture.start, c0: engine.floatCenter };
+      stage.classList.add('is-moving');
+    }
+    if (gesture?.id === e.pointerId && gesture.kind === 'float') {
+      const q = local(e);
+      engine.moveFloatTo(gesture.c0.x + (q.x - gesture.start.x) / view.k, gesture.c0.y + (q.y - gesture.start.y) / view.k);
+      return;
+    }
+    if (gesture?.id === e.pointerId && gesture.kind === 'select') {
+      const q = local(e);
+      if (!gesture.moved && Math.hypot(q.x - gesture.start.x, q.y - gesture.start.y) < 4) return;
+      gesture.moved = true;
+      const p = toFine(q);
+      if (gesture.shape === 'rect') gesture.pts = [gesture.pts[0], p];
+      else if (gesture.shape === 'lasso') {
+        const last = gesture.pts[gesture.pts.length - 1];
+        if (Math.hypot(p.x - last.x, p.y - last.y) * view.k >= 2) gesture.pts.push(p);
+      }
+      drawOverlay();
+      return;
+    }
+    if (gesture?.id === e.pointerId && gesture.kind === 'poly') { engine.polyMoveLast(toFine(local(e)), e.shiftKey); drawOverlay(); return; }
+    if (gesture?.id === e.pointerId && gesture.kind === 'text') {
+      const q = local(e);
+      if (Math.hypot(q.x - gesture.start.x, q.y - gesture.start.y) > 6) gesture.moved = true;
+      return;
+    }
     pointers.set(e.pointerId, local(e));
     if (gesture?.kind === 'pinch' && pointers.size >= 2) { movePinch(); return; }
     if ((gesture?.kind === 'pan' || gesture?.kind === 'tap') && e.pointerId === gesture.id) {
@@ -292,22 +484,48 @@ export function createDoc(d, ws) {
     if (gesture?.kind === 'draw' && e.pointerId === gesture.id) {
       cancelAnimationFrame(raf); raf = 0;
       for (const p of gesture.queue.splice(0)) engine.move(p, { constrain: gesture.constrain });
+      engine.show();
       if (e.type === 'pointercancel') engine.cancel(); else engine.end();
       gesture = null;
       tilesSoon();
     } else if (gesture?.kind === 'tap' && e.pointerId === gesture.id) {
       if (!gesture.moved && e.type === 'pointerup') pickAt(toFine(gesture.start));
       gesture = null;
+    } else if (gesture?.kind === 'select' && e.pointerId === gesture.id) {
+      const g = gesture;
+      gesture = null;
+      if (e.type === 'pointerup') {
+        const opts = { op: g.op, mode: st.mode, all: ws.prefs.wandAll, tolerance: ws.prefs.wandTol };
+        if (g.shape === 'wand') { if (!g.moved) engine.select('wand', { p: g.pts[0] }, opts); }
+        else if (!g.moved) { if (g.op === 'new') engine.deselect(); }
+        else if (g.shape === 'rect') engine.select('rect', { a: g.pts[0], b: g.pts[g.pts.length - 1] }, opts);
+        else engine.select('poly', { pts: g.pts }, opts);
+      }
+    } else if (gesture?.kind === 'text' && e.pointerId === gesture.id) {
+      const g = gesture;
+      gesture = null;
+      if (!g.moved && e.type === 'pointerup') { engine.commitFloat(); ws.textAt(doc, toFine(g.start)); }
+    } else if ((gesture?.kind === 'float' || gesture?.kind === 'maybeLift' || gesture?.kind === 'poly') && e.pointerId === gesture.id) {
+      gesture = null;
+      ws.changed(doc);
     } else if (gesture?.kind === 'pinch') {
       if (pointers.size < 2) gesture = pointers.size ? { kind: 'done' } : null;
     }
-    if (!pointers.size) { gesture = null; stage.classList.remove('is-panning'); }
+    if (!pointers.size) { gesture = null; stage.classList.remove('is-panning', 'is-moving'); }
     drawOverlay();
   };
   stage.addEventListener('pointerup', up);
   stage.addEventListener('pointercancel', up);
   stage.addEventListener('pointerleave', e => { if (e.pointerType === 'mouse') { hover = null; drawOverlay(); } });
   stage.addEventListener('contextmenu', e => e.preventDefault());
+  // A double-click finishes a polygon (its second click added a corner on the same spot).
+  stage.addEventListener('dblclick', () => {
+    if (ws.prefs.tool !== 'polygon' || !engine?.polygon) return;
+    if (engine.polygon.pts.length > 3) engine.polyBack();
+    engine.polyClose();
+    ws.changed(doc);
+    drawOverlay();
+  });
   stage.addEventListener('wheel', e => {
     e.preventDefault();
     const q = local(e);
@@ -342,8 +560,13 @@ export function createDoc(d, ws) {
     refit() { fitted = false; requestAnimationFrame(() => { if (loaded) fit(); }); },
     zoomMiddle,
     drawOverlay,
-    undo: () => engine?.undo(),
-    redo: () => engine?.redo(),
+    undo: () => { const r = engine?.undo(); drawOverlay(); ws.changed(doc); return r; },
+    redo: () => { const r = engine?.redo(); drawOverlay(); ws.changed(doc); return r; },
+    /** The middle of what's on screen, in fine pixels (where pasted things go). */
+    viewCenter() {
+      const r = stage.getBoundingClientRect();
+      return toFine({ x: r.width / 2, y: r.height / 2 });
+    },
     canUndo: () => !!engine?.canUndo(),
     canRedo: () => !!engine?.canRedo(),
     cancelStroke() { if (gesture?.kind === 'draw') { engine.cancel(); gesture = null; } },
@@ -385,6 +608,7 @@ export function createDoc(d, ws) {
       if (discard) { unsaved = false; clearTimeout(saveTimer); await saving; }
       else { if (gesture?.kind === 'draw') engine.end(); await flush(); }
       ro.disconnect();
+      clearInterval(antsTimer);
       cancelAnimationFrame(raf);
       clearTimeout(tilesTimer);
       stage.remove();

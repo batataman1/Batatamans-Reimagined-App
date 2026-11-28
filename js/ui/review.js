@@ -19,16 +19,18 @@ import { PICKABLE_ICONS } from '../config/icons.js';
 import { getTasks, TYPES, PRIORITIES, STATUSES, DIFFICULTIES } from '../tasks/model.js';
 import { getIdeas, SIZE_NAMES, LINE_STYLES, normalizeConnections } from '../ideas/model.js';
 import { isDrawingFile, normalizePalette } from '../draw/model.js';
+import { isStampFile } from '../draw/stamps.js';
 
 const COLLECTION_NAMES = {
   wiki: 'Wiki page', tasks: 'Task', 'task-folders': 'Task folder', ideas: 'Idea', sections: 'Idea section',
-  groups: 'Wiki group', templates: 'Wiki template', drawings: 'Drawing', palettes: 'Colour palette',
+  groups: 'Wiki group', templates: 'Wiki template', drawings: 'Drawing', palettes: 'Colour palette', stamps: 'Stamp',
 };
 // Collections whose items own pictures (images/<id>-…; a drawing owns drawings/<id>.png),
 // shown as one entry with them.
-const OWNS_PICTURES = new Set(['wiki', 'tasks', 'ideas', 'drawings']);
+const OWNS_PICTURES = new Set(['wiki', 'tasks', 'ideas', 'drawings', 'stamps']);
 const ownsFile = (e, path) => isFileOfPage(path, e.main.row.id) || filesOfPage(e.main.row.data).has(path)
-  || (e.main.row.collection === 'drawings' && isDrawingFile(path, e.main.row.id));
+  || (e.main.row.collection === 'drawings' && isDrawingFile(path, e.main.row.id))
+  || (e.main.row.collection === 'stamps' && isStampFile(path, e.main.row.id));
 const STATUS_TEXT = { new: 'New', changed: 'Changed', deleted: 'Deleted' };
 
 /* ---------- Grouping what's pending ---------- */
@@ -54,7 +56,8 @@ async function loadEntries() {
 
 const kindText = e => {
   if (e.main.row.collection === 'drawings') return e.main.row.data?.kind === 'reference' ? 'Reference picture' : 'Drawing';
-  const what = e.main.kind === 'file' ? (e.main.row.path?.startsWith('drawings/') ? 'Drawing picture' : 'Picture')
+  if (e.main.row.collection === 'stamps') return 'Stamp';
+  const what = e.main.kind === 'file' ? (e.main.row.path?.startsWith('drawings/') ? 'Drawing picture' : e.main.row.path?.startsWith('stamps/') ? 'Stamp picture' : 'Picture')
     : e.main.row.collection === 'tasks' && e.main.row.data?.type === 'bug' ? 'Bug'
     : (COLLECTION_NAMES[e.main.row.collection] || humanizeKey(e.main.row.collection));
   return e.files.length ? `${what} + ${plural(e.files.length, 'picture')}` : what;
@@ -328,10 +331,11 @@ async function describe(e, gh, base) {
         : kind === 'sections' ? await sectionDiff(e.status === 'new' ? null : before, after)
         : kind === 'drawings' ? await drawingDiff(e.status === 'new' ? null : before, after)
         : kind === 'palettes' ? paletteDiff(e.status === 'new' ? null : before, after, e.main.row.id)
+        : kind === 'stamps' ? stampDiff(e.status === 'new' ? null : before, after)
         : genericDiff(before, after);
       out.push(lines.length
         ? h('dl', { class: 'rv-diff' }, lines)
-        : h('p', { class: 'muted small', text: e.main.row.collection === 'drawings' && e.files.length ? 'The picture changed (below).' : 'Saved again, but nothing in it is different from GitHub.' }));
+        : h('p', { class: 'muted small', text: ['drawings', 'stamps'].includes(e.main.row.collection) && e.files.length ? 'The picture changed (below).' : 'Saved again, but nothing in it is different from GitHub.' }));
     }
   }
 
@@ -341,7 +345,7 @@ async function describe(e, gh, base) {
         ? h('span', { class: 'rv-pic-gone', text: 'Removed' })
         : h('img', { src: objectUrl(item.row.blob), alt: '' }),
       h('figcaption', { class: 'small', text: `${STATUS_TEXT[status]} picture` })))));
-    if (e.main.row.collection === 'drawings' || e.main.row.path?.startsWith('drawings/')) out[out.length - 1].classList.add('rv-pics-drawing');
+    if (['drawings', 'stamps'].includes(e.main.row.collection) || /^(drawings|stamps)\//.test(e.main.row.path || '')) out[out.length - 1].classList.add('rv-pics-drawing');
   }
   return out;
 }
@@ -660,6 +664,11 @@ function paletteDiff(a, b, id) {
   if (added.length) out.push([h('dt', { text: 'Colours added' }), h('dd', swatches(added))]);
   if (removed.length) out.push([h('dt', { text: 'Colours taken out' }), h('dd', swatches(removed))]);
   return out;
+}
+
+function stampDiff(a, b) {
+  if (!a) return [line('Name', null, b.name || 'Stamp'), line('Kind', null, b.kind === 'free' ? 'Free (smooth)' : 'Pixel art')];
+  return same(a.name, b.name) ? [] : [line('Name', a.name, b.name)];
 }
 
 /** A list of + (added), − (removed) and ~ (changed) lines. */

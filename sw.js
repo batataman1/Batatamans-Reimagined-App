@@ -3,7 +3,7 @@
 // changes; the app then offers "Reload" to update.
 // Requests to GitHub's API are never cached here.
 
-const VERSION = '217b0d3901';
+const VERSION = '389f791b50';
 const CACHE = `brr-app-${VERSION}`;
 const FILES = [
   "./index.html",
@@ -27,9 +27,15 @@ const FILES = [
   "./js/draw/colors.js",
   "./js/draw/doc.js",
   "./js/draw/editor.js",
+  "./js/draw/effects.js",
   "./js/draw/engine.js",
+  "./js/draw/font.js",
   "./js/draw/gallery.js",
   "./js/draw/model.js",
+  "./js/draw/select.js",
+  "./js/draw/stamps.js",
+  "./js/draw/tooldialogs.js",
+  "./js/draw/wikipic.js",
   "./js/draw/workspace.js",
   "./js/ideas/actions.js",
   "./js/ideas/editor.js",
