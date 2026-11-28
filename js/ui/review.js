@@ -3,11 +3,12 @@
 //
 // A wiki page and its pictures are one entry, so a page never reaches GitHub without them.
 // Unticked entries stay on this device and show up again next time you tap Push.
-// Undo puts the item back the way it is on GitHub (a new item is deleted from this device).
+// Undo puts the item back the way it is on GitHub (a new item is deleted from this device);
+// "Undo all changes" does that for every entry at once.
 
 import { h, clear, plural, humanizeKey, base64ToUtf8, isPlainObject } from '../core/util.js';
 import { store } from '../core/store.js';
-import { openModal, confirmDialog, errorDialog, toast } from './dialogs.js';
+import { openModal, confirmDialog, errorDialog, messageDialog, progressDialog, toast } from './dialogs.js';
 import { icon } from './icons.js';
 import { getWiki } from '../wiki/model.js';
 import { plainText, nameFor } from '../wiki/text.js';
@@ -78,6 +79,22 @@ function editAddress(e) {
   return { wiki: `#/wiki/e/${id}`, groups: `#/wiki/c/g/${id}`, templates: `#/wiki/c/t/${id}`, tasks: `#/tasks/t/${id}`, ideas: `#/ideas/i/${id}`, drawings: `#/ideas/draw/${id}` }[e.main.row.collection] || null;
 }
 
+/**
+ * If one of these entries is open in an editor right now, leave the editor first, so it doesn't
+ * save it again after it's put back. A changed wiki page goes to its page, the rest to the list.
+ */
+async function leaveEditorsOf(list) {
+  for (const e of list) {
+    const open = editAddress({ ...e, status: 'changed' });
+    if (!open || !(location.hash === open || location.hash.startsWith(`${open}/`))) continue;
+    const c = e.main.row.collection;
+    location.hash = c === 'wiki' ? (e.status === 'new' ? '#/wiki' : `#/wiki/p/${encodeURIComponent(e.main.row.id)}`)
+      : { tasks: '#/tasks', ideas: '#/ideas', drawings: '#/ideas/d/all' }[c] || '#/wiki/c';
+    await new Promise(r => setTimeout(r, 400));
+    return;
+  }
+}
+
 /* ---------- The screen ---------- */
 
 /**
@@ -89,13 +106,17 @@ export async function reviewChanges(gh) {
   const chosen = new Set(entries.map(e => e.key));
   const list = h('ul', { class: 'rv-list' });
   const summary = h('p', { class: 'muted small rv-summary' });
+  const undoAllBtn = h('button', {
+    type: 'button', class: 'btn btn-small btn-danger-outline rv-undo-all',
+    onclick: () => undoAll(),
+  }, icon('undo', { size: 14 }), 'Undo all changes');
 
   const m = openModal({
     title: 'Check your changes',
     className: 'modal-wide modal-review',
     body: [
       h('p', { class: 'rv-intro', text: 'Ticked changes go to GitHub. Untick one to keep it on this device for a later Push.' }),
-      summary, list,
+      h('div', { class: 'rv-bar' }, summary, undoAllBtn), list,
     ],
     actions: [
       { id: 'cancel', label: 'Cancel', kind: 'quiet' },
@@ -114,6 +135,7 @@ export async function reviewChanges(gh) {
     summary.textContent = entries.length
       ? `${plural(entries.length, 'change')} on this device · ${n} ticked`
       : 'Nothing left to push.';
+    undoAllBtn.hidden = !entries.length;
   }
 
   async function reload() {
@@ -185,23 +207,76 @@ export async function reviewChanges(gh) {
     const ok = await confirmDialog({ title: text[0], body: h('p', { text: text[1] }), confirm: text[2], danger: e.status !== 'deleted' });
     if (!ok) return;
     try {
-      // If it's open in an editor, leave the editor first so it doesn't save it again.
-      const open = editAddress({ ...e, status: 'changed' });
-      if (open && (location.hash === open || location.hash.startsWith(`${open}/`))) {
-        location.hash = { wiki: `#/wiki/p/${encodeURIComponent(e.main.row.id)}`, tasks: '#/tasks', ideas: '#/ideas', drawings: '#/ideas/d/all' }[e.main.row.collection] || '#/wiki/c';
-        await new Promise(r => setTimeout(r, 400));
-      }
+      await leaveEditorsOf([e]);
       await discard(e, gh, base);
       toast(e.status === 'deleted' ? 'Brought back.' : 'Change undone.', { kind: 'ok' });
     } catch (err) {
       errorDialog(err, "That couldn't be undone");
     }
+    store.emit({ type: 'discarded' });
     await reload();
+  }
+
+  /** Throw away every change waiting on this device (ticked or not): all back to how GitHub has it. */
+  async function undoAll() {
+    const all = [...entries];
+    const n = all.length;
+    if (!n) return;
+    const count = s => all.filter(e => shownStatus(e) === s).length;
+    const nNew = count('new'), nChanged = count('changed'), nDeleted = count('deleted');
+    const what = [
+      nNew && `${plural(nNew, 'new item')} ${nNew === 1 ? 'is' : 'are'} deleted (${nNew === 1 ? "it's" : "they're"} only on this device)`,
+      nChanged && `${plural(nChanged, 'changed item')} ${nChanged === 1 ? 'goes' : 'go'} back to how ${nChanged === 1 ? 'it is' : 'they are'} on GitHub`,
+      nDeleted && `${plural(nDeleted, 'deleted item')} ${nDeleted === 1 ? 'comes' : 'come'} back`,
+    ].filter(Boolean);
+    const all1 = n === 1 ? `the ${plural(n, 'change')}` : `all ${plural(n, 'change')}`;
+    const ok = await confirmDialog({
+      title: `Undo ${all1}?`,
+      body: [
+        h('p', { text: `${all1[0].toUpperCase()}${all1.slice(1)} waiting to be pushed on this device will be thrown away, ticked or not. Everything goes back to how it is on GitHub.` }),
+        h('ul', { class: 'rv-undo-all-list' }, what.map(t => h('li', { text: t }))),
+        h('p', { class: 'muted', text: "This can't be undone." }),
+      ],
+      confirm: n === 1 ? 'Undo 1 change' : `Undo all ${plural(n, 'change')}`,
+      danger: true,
+    });
+    if (!ok) return;
+
+    await leaveEditorsOf(all);
+    const prog = progressDialog('Undoing your changes');
+    const failed = [];
+    let i = 0;
+    for (const e of all) {
+      prog.set(`${++i} of ${n}: ${e.main.label}`);
+      try { await discard(e, gh, base); }
+      catch (err) { failed.push({ e, err }); }
+    }
+    prog.close();
+    store.emit({ type: 'discarded' });
+    await reload();
+
+    if (failed.length) {
+      const names = failed.map(f => f.e.main.label);
+      await messageDialog({
+        title: failed.length === n ? "The changes couldn't be undone" : `${plural(failed.length, 'change')} couldn't be undone`,
+        body: [
+          h('p', { text: `${failed[0].err?.message || failed[0].err}` }),
+          h('p', { class: 'muted', text: `Still on this device: ${names.slice(0, 6).join(', ')}${names.length > 6 ? ` and ${names.length - 6} more` : ''}. Try again when you're online.` }),
+        ],
+      });
+      console.error(failed);
+    }
+    if (!entries.length) {
+      m.close('undone');
+      toast(`Undid ${plural(n, 'change')}. This device matches GitHub again.`, { kind: 'ok' });
+    } else if (failed.length < n) {
+      toast(`Undid ${plural(n - failed.length, 'change')}.`, { kind: 'ok' });
+    }
   }
 
   draw();
   const result = await m.result;
-  if (result === 'edit') return false;   // went to edit something; no message needed
+  if (result === 'edit' || result === 'undone') return false;   // went to edit something / threw everything away; no message needed
   if (result !== 'push') return null;
   const paths = new Set();
   for (const e of entries) if (chosen.has(e.key)) for (const it of allItems(e)) paths.add(it.repoPath);

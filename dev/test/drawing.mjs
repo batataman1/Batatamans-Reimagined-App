@@ -801,6 +801,137 @@ await A.waitForFunction(() => document.querySelectorAll('.dg-card').length === 3
 assert.equal(await drawingNamed(A, 'Termite (new colours)'), null);
 assert.equal(await A.evaluate(async id => !!(await (await import('./js/core/store.js')).store.getFile(`drawings/${id}.png`)), copy.id), false);
 
+/* ---- Undo all changes (Check your changes) ---- */
+// Changes of every sort: the deleted drawing (above), erasing on an open drawing, a new drawing
+// open in a tab, a new task, a renamed idea.
+const pending = page => page.evaluate(async () => (await (await import('./js/core/store.js')).store.pending()).length);
+await A.goto(BASE + `#/ideas/draw/${drawingId}`);
+await A.locator('.dr-pane.active .dr-pic').waitFor();
+if (await A.locator('.dr-panes.split').count()) await drMenu(A, 'Close split screen');
+await A.waitForFunction(id => document.querySelector('.dr-pane.active')?.dataset.id === id, drawingId);
+assert.equal(await cellColor(A, 6, 6), '#000000/255', 'the square the phone drew');
+await tool(A, 'eraser');
+await clickCell(A, 6, 6);
+assert.equal(await cellColor(A, 6, 6), '-');
+await waitDrawingSaved(A);
+const extra = await A.evaluate(async () => {
+  const { store } = await import('./js/core/store.js');
+  const { createDrawing } = await import('./js/draw/model.js');
+  const d = await createDrawing({ name: 'Undo me', width: 16, height: 16, kind: 'pixel' });
+  await store.put('tasks', 't-undo-me', { title: 'Undo me too', type: 'task', priority: 'normal', status: 'todo', folder: null, links: [], body: [], created: new Date().toISOString() });
+  const idea = (await store.list('ideas')).find(r => r.data.title === 'Termites');
+  await store.put('ideas', idea.id, { ...idea.data, title: 'Termites (renamed)' });
+  return { drawing: d.id, idea: idea.id };
+});
+await A.goto(BASE + `#/ideas/draw/${extra.drawing}`);
+await A.waitForFunction(() => document.querySelector('.dr-tab.active .dr-tab-name')?.textContent === 'Undo me');
+await A.waitForTimeout(300);
+await A.locator('.dr-top button[aria-label="Back"]').click();
+await A.locator('.dg-card').first().waitFor();
+await clearToasts(A);
+await A.locator('.sync-btn', { hasText: 'Push' }).click();
+await rv.waitFor();
+const tags = await rv.locator('.rv-tag').allTextContents();
+const nAll = tags.length;
+assert.ok(nAll >= 5, `expected at least 5 changes, got ${tags.join(', ')}`);
+const rvAll = await rv.locator('.rv-list').textContent();
+assert.match(rvAll, /Termite \(new colours\).*Deleted/);
+assert.match(rvAll, /Undo me too.*New.*Task/);
+assert.match(rvAll, /Termites \(renamed\).*Changed.*Idea/);
+// Untick one: Undo all still throws it away
+await rv.getByRole('checkbox', { name: 'Push Undo me too' }).uncheck();
+assert.match(await rv.locator('.rv-summary').textContent(), new RegExp(`${nAll} changes on this device · ${nAll - 1} ticked`));
+await A.screenshot({ path: SHOTS + 'd13-review-undo-all.png' });
+await rv.getByRole('button', { name: 'Undo all changes' }).click();
+const cf = dlg(A);
+await cf.getByRole('heading', { name: `Undo all ${nAll} changes?` }).waitFor();
+const count = s => tags.filter(t => t === s).length;
+const cfText = await cf.textContent();
+assert.match(cfText, new RegExp(`${count('New')} new items? (is|are) deleted`));
+assert.match(cfText, new RegExp(`${count('Changed')} changed items? go(es)? back to how`));
+assert.match(cfText, new RegExp(`${count('Deleted')} deleted items? come(s)? back`));
+assert.match(cfText, /ticked or not/);
+await A.screenshot({ path: SHOTS + 'd14-undo-all-confirm.png' });
+// Cancel keeps everything
+await cf.getByRole('button', { name: 'Cancel' }).click();
+assert.equal(await rv.locator('.rv-item').count(), nAll);
+assert.equal(await pending(A) > 0, true);
+await rv.getByRole('button', { name: 'Undo all changes' }).click();
+await dlg(A).getByRole('button', { name: `Undo all ${nAll} changes`, exact: true }).click();
+await expectToast(A, new RegExp(`Undid ${nAll} changes\\. This device matches GitHub again`));
+await A.waitForFunction(() => !document.querySelector('dialog[open]'));
+assert.equal(await pending(A), 0, 'nothing left to push');
+await A.waitForFunction(() => document.querySelector('.sync-btn .badge').hidden);
+const after = await A.evaluate(async ([copyId, ex]) => {
+  const { store } = await import('./js/core/store.js');
+  return {
+    copy: !!(await store.get('drawings', copyId)), copyFile: !!(await store.getFile(`drawings/${copyId}.png`)),
+    newDrawing: await store.get('drawings', ex.drawing), task: await store.get('tasks', 't-undo-me'),
+    idea: (await store.get('ideas', ex.idea)).data.title,
+  };
+}, [copy.id, extra]);
+assert.deepEqual(after, { copy: true, copyFile: true, newDrawing: null, task: null, idea: 'Termites' });
+await A.waitForFunction(() => document.querySelectorAll('.dg-card').length === 4);
+// The open drawing tabs pick it up: the erased square is back, the new drawing's tab is gone
+await A.goto(BASE + `#/ideas/draw/${drawingId}`);
+await A.locator('.dr-pane.active .dr-pic').waitFor();
+await A.waitForFunction(() => ![...document.querySelectorAll('.dr-tab-name')].some(t => t.textContent === 'Undo me'));
+await A.waitForFunction(() => { const c = document.querySelector('.dr-pane.active .dr-pic'); const k = c.width / 16; return c.getContext('2d').getImageData(6 * k + k / 2, 6 * k + k / 2, 1, 1).data[3] === 255; });
+assert.equal(await cellColor(A, 6, 6), '#000000/255', 'the open tab shows the GitHub picture again');
+await A.locator('.dr-top button[aria-label="Back"]').click();
+await A.locator('.dg-card').first().waitFor();
+// Nothing waiting: Push says so (no review)
+await clearToasts(A);
+await A.locator('.sync-btn', { hasText: 'Push' }).click();
+await expectToast(A, /Nothing to push/);
+// GitHub can't be reached half-way: what could be undone is, the rest stays in the list
+await A.evaluate(async id => {
+  const { store } = await import('./js/core/store.js');
+  await store.put('tasks', 't-undo-new', { title: 'Offline new', type: 'task', priority: 'normal', status: 'todo', folder: null, links: [], body: [], created: new Date().toISOString() });
+  const idea = await store.get('ideas', id);
+  await store.put('ideas', id, { ...idea.data, title: 'Termites (offline)' });
+}, extra.idea);
+await clearToasts(A);
+await A.locator('.sync-btn', { hasText: 'Push' }).click();
+await rv.waitFor();
+const errorsBefore = errors.length;
+const blocked = route => route.abort();
+await A.context().route('**/git/blobs/*', blocked);
+await rv.getByRole('button', { name: 'Undo all changes' }).click();
+await dlg(A).getByRole('button', { name: 'Undo all 2 changes', exact: true }).click();
+await dlg(A).getByRole('heading', { name: "1 change couldn't be undone" }).waitFor();
+assert.match(await dlg(A).textContent(), /Still on this device: Termites \(offline\)/);
+await dlg(A).getByRole('button', { name: 'OK' }).click();
+await expectToast(A, /Undid 1 change\./);
+assert.deepEqual(await rv.locator('.rv-name').allTextContents(), ['Termites (offline)']);
+await A.context().unroute('**/git/blobs/*', blocked);
+errors.splice(errorsBefore);   // the blocked downloads were logged on purpose
+await rv.getByRole('button', { name: 'Undo all changes' }).click();
+await dlg(A).getByRole('button', { name: 'Undo 1 change', exact: true }).click();
+await expectToast(A, /Undid 1 change\. This device matches GitHub again/);
+assert.equal(await pending(A), 0);
+
+// On the phone: the button fits, and Undo all with one change
+await B.evaluate(async () => {
+  const { store } = await import('./js/core/store.js');
+  await store.put('tasks', 't-phone-undo', { title: 'Phone change', type: 'bug', priority: 'high', status: 'todo', folder: null, links: [], body: [], created: new Date().toISOString() });
+});
+await clearToasts(B);
+await B.locator('.sync-btn', { hasText: 'Push' }).tap();
+const rvB = B.locator('dialog.modal-review');
+await rvB.waitFor();
+assert.equal(await rvB.locator('.rv-item').count(), 1);
+const ub = await rvB.getByRole('button', { name: 'Undo all changes' }).boundingBox();
+assert.ok(ub.x >= 0 && ub.x + ub.width <= 384 + 1, 'the button fits on the phone');
+await B.screenshot({ path: SHOTS + 'd15-phone-review-undo-all.png' });
+await rvB.getByRole('button', { name: 'Undo all changes' }).tap();
+await dlg(B).getByRole('heading', { name: 'Undo the 1 change?' }).waitFor();
+assert.match(await dlg(B).textContent(), /The 1 change waiting to be pushed.*1 new item is deleted \(it's only on this device\)/);
+await B.screenshot({ path: SHOTS + 'd16-phone-undo-all-confirm.png' });
+await dlg(B).getByRole('button', { name: 'Undo 1 change', exact: true }).tap();
+await expectToast(B, /Undid 1 change\. This device matches GitHub again/);
+assert.equal(await pending(B), 0);
+
 console.log('errors:', errors.length ? errors : 'none');
 assert.equal(errors.length, 0);
 await browser.close();

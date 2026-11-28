@@ -1398,6 +1398,9 @@ dialog.modal-icons { width: min(560px, calc(100vw - 24px)); }
 
 .modal-review .modal-body { display: grid; gap: 10px; }
 .rv-intro, .rv-summary { margin: 0; }
+.rv-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 12px; }
+.rv-undo-all { gap: 6px; }
+.rv-undo-all-list { margin: 0; padding-left: 1.3em; display: grid; gap: 4px; }
 .rv-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
 .rv-item {
   display: flex; gap: 10px; align-items: flex-start;

@@ -111,6 +111,9 @@ export const ideasTab = {
     let timer = null;
     const editing = () => ['idea', 'drawing'].includes(parseIdeasPath(current).view);
     const off = store.on(d => {
+      // Check your changes put things back the way GitHub has them: the mind map's Undo steps
+      // would bring the thrown-away versions back, so they go too.
+      if (d?.type === 'discarded') ui.mm.undo = [];
       if (d?.type === 'connection' || editing()) return;
       clearTimeout(timer);
       // Not while a bubble is being touched on the mind map: that would drop the gesture.
